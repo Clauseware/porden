@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react';
-export const metadata = {title: 'Porden courier integration'};
-export default function Layout({children}: {children: ReactNode}) {
-  return <html lang="en"><body><main>{children}</main></body></html>;
+import './globals.css';
+export const metadata = { title: 'Porden courier integration' };
+export default function Layout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <main>{children}</main>
+      </body>
+    </html>
+  );
 }
