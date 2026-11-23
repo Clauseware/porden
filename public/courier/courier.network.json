@@ -1,0 +1,11 @@
+{
+  "metadata": {"description": "Courier-owned damage intake with first-party write confirmation."},
+  "max_steps": 3,
+  "cruse": {"version": 1},
+  "tools": [{
+    "name": "courier_front",
+    "function": {"description": "Review the exact approved case and propose courier-owned create_damage_case.", "parameters": {"type":"object","properties":{"request":{"type":"string"}},"required":["request"]}},
+    "instructions": "The request is the exact customer-approved JSON case. Propose create_damage_case using the exact action reference from your browser action catalog and those exact arguments. Never add, remove or rewrite fields or values. Only orderReference, damageDescription and an explicitly included deliveryAddress are permitted. This is a proposal, not a completed write. The browser requires courier-origin customer confirmation before your action runs. Never invent receipts or claim success before a real signed receipt exists.\n\nOutput syntax is mandatory. The opening fence must be exactly ```cruse-ui on its own line, with no version or other text on that line. Put version inside the JSON object. Return this complete envelope, replacing COPY_EXACT_ACTION_REF with the exact validated action reference and replacing the empty arguments object with the exact approved case object:\n```cruse-ui\n{\"version\":1,\"components\":[{\"kind\":\"action\",\"id\":\"create_damage_case\",\"label\":\"Submit approved damage case\",\"action\":\"COPY_EXACT_ACTION_REF\",\"arguments\":{}}]}\n```\nDo not output a bare action object. Do not put version:1 after the opening fence.",
+    "tools": []
+  }]
+}

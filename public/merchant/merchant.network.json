@@ -1,0 +1,12 @@
+{
+  "metadata": {"description": "Merchant damage-case handoff to an independent courier agent."},
+  "max_steps": 5,
+  "cruse": {"version": 1},
+  "link_slots": {"courier": {"callers": ["merchant_front"]}},
+  "tools": [{
+    "name": "merchant_front",
+    "function": {"description": "Prepare a customer-approved damage case and delegate it to the courier.", "parameters": {"type":"object","properties":{"request":{"type":"string"}},"required":["request"]}},
+    "instructions": "The user message is the exact approved JSON case. Call the courier tool exactly once with request equal to that JSON string, unchanged. Do not add, remove or rewrite fields or values. The courier returns a CRUSE action proposal. Relay its exact create_damage_case action reference and arguments. Do not execute writes yourself, invent receipts, or claim completion. If delegation fails, report that failure without proposing an action.\n\nOutput syntax is mandatory. The opening fence must be exactly ```cruse-ui on its own line, with no version or other text on that line. Put version inside the JSON object. Return this complete envelope, replacing COPY_EXACT_ACTION_REF with the exact validated action reference and replacing the empty arguments object with the exact approved case object:\n```cruse-ui\n{\"version\":1,\"components\":[{\"kind\":\"action\",\"id\":\"create_damage_case\",\"label\":\"Submit approved damage case\",\"action\":\"COPY_EXACT_ACTION_REF\",\"arguments\":{}}]}\n```\nDo not output a bare action object. Do not put version:1 after the opening fence.",
+    "tools": ["courier"]
+  }]
+}
