@@ -1,6 +1,6 @@
 # Porden
 
-Bun workspace implementation of [the Porden plan](notes/porden-planning/README.md): independent Hono APIs backed by PostgreSQL through Drizzle ORM, browser TypeScript SDK, shared Zod contracts, and two Next.js integration scaffolds. Visual UI remains owned by the frontend teammate.
+Bun workspace implementation of [the Porden plan](notes/porden-planning/README.md): independent Hono APIs backed by PostgreSQL through Drizzle ORM, browser TypeScript SDK, shared Zod contracts, and two Next.js demo applications. The merchant consent flow, progress, cancellation/refusal, unknown-outcome recovery and courier receipt view follow the Forest & Paper direction in `brand.md` and `design.md`.
 
 The protected Node/SQLite reference remains in `server.mjs`, `config.mjs`, `public/`, and `tests/`. Run it with `bun run start:baseline`. Its evidence does not establish that the replacement stack works end to end.
 
@@ -13,7 +13,7 @@ The protected Node/SQLite reference remains in `server.mjs`, `config.mjs`, `publ
 | Merchant in-tab state | Persistent sender transfers, consent scopes, and safe event metadata |
 | `public/merchant/merchant.js` orchestration | `packages/sdk`: official Engine, action bindings, review dialog, and action bridge |
 | Ad hoc payload checks | `packages/contracts`: strict schemas, types, canonical JSON, action schema |
-| Static websites | `apps/merchant-web` and `apps/courier-web`: teammate scaffolds with same-origin API/runtime proxies |
+| Static websites | `apps/merchant-web` and `apps/courier-web`: independent demo UIs with same-origin API/runtime proxies |
 
 ## Local setup
 
@@ -41,7 +41,7 @@ bun run dev:courier
 
 Merchant website: http://localhost:4100; courier: http://localhost:4200. APIs bind to loopback ports 5100/5200 and are separately configured. Next.js proxies API, discovery, official runtime assets and receiver bridge to its own organization's backend. `API_INTERNAL_ORIGIN` optionally overrides each proxy destination. There are no private `NEXT_PUBLIC_*` settings.
 
-Sign in on the courier scaffold before opening an action popup. The merchant teammate calls `client.signIn(password)` before draft creation. Demo authentication uses an explicit password and a one-hour authenticated session, with separate cookie names for local organizations. It is not production identity or a production rate-limiting solution.
+Open the courier site and sign in using its configured `DEMO_PASSWORD`, then sign in on the merchant site using the merchant's password. Fill in the synthetic damage case, review the exact fields, approve sharing, confirm the merchant review, and open the courier window for its independent approval. The merchant shows a verified receipt and links to the authenticated courier-owned record. Unknown outcomes offer read-only receipt recovery and disable new submissions. Demo authentication uses a one-hour authenticated session, with separate cookie names for local organizations. It is not production identity or a production rate-limiting solution.
 
 ## Frontend integration
 
@@ -64,7 +64,7 @@ const outcome = await client.transfer({transferId: draft.id,
 // For unknown results: await client.reconcile(draft.id). Never repeat the write.
 ```
 
-`confirm` must show the exact recipient and selected fields. Optional address data is excluded from inference and the receiver when absent from `approvedFields`. The SDK checks exact delegation and action arguments before the official merchant review and independent courier confirmation. There is no custom agent transport or automatic write retry. Accepted status comes from server verification of the receiver-signed receipt. It means accepted, not resolved.
+`confirm` must show the exact recipient and selected fields. Optional address data is excluded from inference and the receiver when absent from `approvedFields`. The SDK checks exact delegation and proposed action arguments before marking the transfer submitted, then checks the final prepared arguments at merchant review. The courier independently confirms its write. There is no custom agent transport or automatic write retry. Accepted status comes from server verification of the receiver-signed receipt. It means accepted, not resolved. The upstream runtime reports receiver refusal conservatively as `unknown`; the SDK returns `RECEIVER_DECLINED` when its receipt explicitly says the user declined, so the UI can explain the refusal without inventing a persisted rejection.
 
 Fixtures are exported from `@porden/sdk/fixtures`: accepted, cancelled, unknown, a cryptographically valid synthetic signed receipt with public JWKS, and a bad signature. The fixture private key was discarded. These fixtures are not live-service evidence. Events fire only when observed; `receiver_confirmation_required` is reserved until upstream exposes a reliable popup event. A model proposal does not produce an acceptance event.
 
@@ -72,21 +72,38 @@ Fixtures are exported from `@porden/sdk/fixtures`: accepted, cancelled, unknown,
 
 Routes use `/api/v1` on each public origin. Both expose `/healthz`, `/readyz`, public discovery/runtime assets and `/.well-known/jwks.json`. Login is `POST /api/v1/session` with `{password}`; authenticated GET returns a CSRF token. Writes require the exact public Origin, organization session and CSRF token.
 
-Merchant supports `POST /transfers`, `GET /transfers/:id`, and POST suffixes `/approve`, `/submit`, `/outcome`, `/receipts`, `/reconcile` under `/api/v1`. `/outcome` accepts only `cancelled` or `unknown`; a client cannot mark itself accepted. Courier supports public `GET /api/v1/case-types`, first-party `POST /api/v1/cases`, and partner-authenticated read-only `/api/v1/cases/by-request/:requestId` and `/by-transfer/:id`. The lookup credential stays server-side. No public unauthenticated write endpoint is provided.
+Merchant supports `POST /transfers`, `GET /transfers/:id`, and POST suffixes `/approve`, `/submit`, `/outcome`, `/receipts`, `/reconcile` under `/api/v1`. `/outcome` accepts only `cancelled` or `unknown`; a client cannot mark itself accepted. `/api/config` now also publishes the configured recipient origin for the UI. Courier supports public `GET /api/v1/case-types`, first-party `POST /api/v1/cases`, partner-authenticated read-only `/api/v1/cases/by-request/:requestId` and `/by-transfer/:id`, and customer-session-protected `GET /api/v1/receipts/:id` for the receipt screen. The partner credential stays server-side. No public unauthenticated write endpoint is provided.
 
 Intentional changes from the prototype and draft plan:
 
 - Stable transfer UUIDs come from the sender. The official runtime request ID remains intact in receiver storage and receipts; no lossy or new-ID write retry. Unique `(caller_origin, request_id)` and `(caller_origin, transfer_id)` prevent both duplicate classes.
 - Official action arguments are `{transferId, caseType, data, approval}`. The signed approval binds recipient, transfer, fields, canonical data hash, demo subject and ten-minute expiry. The courier verifies it using the configured merchant's JWKS; it does not follow a caller-supplied key URL.
 - Sender `draft_data` and `approved_data` preserve consent scope; drafts also store customer ownership. Accepted receipts persist with the case atomically and replay byte-for-byte. Signed receipts bind the exact payload hash in addition to IDs and field names.
-- `/submit`, `/outcome` and `/reconcile` make persisted lifecycle and recovery explicit. Receipt lookup by public receipt ID is omitted; server-side reconciliation uses scoped transfer or request IDs.
+- `/submit`, `/outcome` and `/reconcile` make persisted lifecycle and recovery explicit. Server-side reconciliation uses scoped transfer or request IDs; the demo UI reads a customer-session-protected receipt record.
 - `rejected` remains a typed outcome for future definite refusals. The official runtime's ambiguous write failures remain `unknown`. A 404 during reconciliation also stays unknown because an earlier write may still be in flight.
 
 There is no migration of synthetic SQLite records. The original database and signing key are untouched. Drizzle's Bun SQL adapter handles queries and transactions; Drizzle's migrator applies independent merchant/courier migration folders. Role and checksum guards remain active. Databases already initialized by the original SQL runner are adopted without recreating their tables. Never point both APIs at the same database. Future migrations must be additive; do not alter an applied SQL file. Rollback before cutover means restarting the preserved baseline, not deleting or rewriting existing data.
 
 Edit `merchant-schema.ts` or `courier-schema.ts`, then generate migrations with `bun run --cwd apps/api db:generate:merchant` or `db:generate:courier`. Review generated SQL before running the corresponding root `db:migrate:*` command. The initial foreign keys use unqualified references so isolated test schemas work through PostgreSQL's `search_path`; preserve that property for future migrations.
 
+Use `prepare:false` for Bun SQL connections passed to Drizzle on Bun 1.4.3. Drizzle serializes JSON and array parameters; prepared inference in this Bun version double-encodes JSONB strings. Integration tests assert that draft and approved data are stored as JSON objects, not JSON strings. No existing migration or historical data was rewritten.
+
 ## Verification and current limits
+
+### Error handling and app quality checks
+
+API failures consistently return `{error:{code,message,requestId}}` and an `X-Request-Id` header. Provider connection, timeout, authentication, credit, model, rate-limit and upstream failures are distinguished. Server diagnostics retain safe system codes and stack locations without logging credentials, case payloads, SQL parameters or provider response bodies. Unexpected exceptions remain failed requests; they are not converted into success.
+
+The SDK normalizes transport failures, invalid JSON, invalid response shapes and input failures into `PordenError`. Use `getErrorMessage(error)` for safe user-facing copy and the diagnostic reference. Streaming failures after headers terminate the stream and are logged; a started HTTP response cannot be replaced with a new JSON status. Transfer uncertainty still uses read-only reconciliation. Both Next.js apps include page/root error boundaries, and expired merchant sessions can reauthenticate without losing entered case details. Startup, shutdown and migration CLI failures exit unsuccessfully with controlled diagnostics.
+
+Oxlint and Oxfmt are enforced for `apps/`:
+
+```powershell
+bun run format       # write formatting in apps/ only
+bun run check:apps   # zero-warning lint, formatting check and TypeScript
+```
+
+Generated files and historical migrations are excluded. `AGENTS.md` requires these commands, and `.github/workflows/apps-quality.yml` runs the same checks on pushes and pull requests. The workflow has not been executed on GitHub in this session. Current focused verification includes **23 passing unit tests**, **six passing PostgreSQL tests**, both production builds, and clean lint/format/type checks. Browser evidence is recorded under timestamped proof directories.
 
 ```powershell
 bun run typecheck
@@ -101,9 +118,27 @@ python -m pytest tests/test_api.py -q -p no:cacheprovider
 node --test tests/test_openrouter.mjs tests/test_proposal_format.mjs
 ```
 
-Observed in this implementation session: TypeScript check, both Next.js builds, browser SDK bundling, 12 new unit tests and all eight original API/config checks passed. After the Drizzle conversion, all five PostgreSQL integration tests passed against Docker-hosted PostgreSQL: existing-schema adoption, concurrent idempotency/conflicts, atomic rollback, lost-ack reconciliation and changed/expired consent. These tests use isolated schemas, not independent deployment credentials; deployment database-role isolation is still a separate release check. PostgreSQL tests are skipped when `PORDEN_TEST_DATABASE_URL` is absent.
+Unit/API verification now includes 14 unit tests, six PostgreSQL integration tests, TypeScript checking, and all eight original API/config checks. The concurrency test sends 20 identical requests and requires one case and one stable receipt. Invalid state transitions and repeated approvals fail. Integration tests assert real JSONB object storage and unchanged migration adoption. PostgreSQL tests are skipped when `PORDEN_TEST_DATABASE_URL` is absent.
 
-The user started Docker Compose and installed dependencies outside the managed sandbox. This session then connected to PostgreSQL directly and verified the Drizzle integration tests. `bun.lock` is present and a frozen offline dependency install passed; the old npm lockfile is only a prototype artifact. The Drizzle Kit CLI hit a sandbox OS-user lookup error, so initial migrations and snapshots were generated through Drizzle Kit's programmatic API. New-stack browser/live-model transfer, repeated-run reliability and public HTTPS remain unverified. Do not retire the baseline or claim conformance until those gates pass. No commit or deployment was performed.
+The new-stack browser suite uses the actual SDK, upstream runtime, two production Next.js processes, two Hono HTTP listeners, and separate PostgreSQL organization credentials. It creates and removes a unique test schema in each organization's database. Both roles must be denied connection to the other database and denied `SET ROLE` to the other organization. Never point these tests at production.
+
+```powershell
+# Use an installed Playwright, or set HANDOFF_PLAYWRIGHT_MODULE to its index.mjs file URL.
+# HANDOFF_CHROME optionally supplies the installed Chromium executable.
+bun run build:merchant
+bun run build:courier
+bun run test:porden:browser
+# Fixed synthetic inference responses, complete browser success flow repeated 20 times:
+$env:PORDEN_RUNS='20'
+bun run test:porden:browser
+# Real provider; requires the configured :free model and key, no scripted inference:
+$env:PORDEN_RUNS='1'
+bun run test:porden:live
+```
+
+The browser suite covers customer consent, merchant review and courier approval, both cancellation points, explicit courier refusal, changed delegation/proposal/write payloads, invalid receipt signature, lost acknowledgement, authenticated receiver receipt display and mobile overflow. Recovery must leave exactly one receiver case and one write attempt. It does not add application retries. Optional `PORDEN_MERCHANT_DATABASE_URL` and `PORDEN_COURIER_DATABASE_URL` override the local organization connections; ports 4100/4200 and 5100/5200 must be free. Reports, synthetic traces and screenshots go into timestamped `tmp/porden-browser-proof/` or `tmp/porden-live-proof/` directories. See `PROOF_RESULTS.md` for observed outcomes rather than treating configured test commands as evidence.
+
+The user started Docker Compose and installed dependencies outside the managed sandbox. `bun.lock` is present and a frozen offline dependency install passed; the old npm lockfile is only a prototype artifact. The Drizzle Kit CLI hit a sandbox OS-user lookup error, so initial migrations and snapshots were generated through Drizzle Kit's programmatic API. Scripted new-stack browser transfers and database permission isolation have now run; real-model completion remains blocked by provider connectivity in this session (`502 PROVIDER_UNAVAILABLE`). Public HTTPS origins are not deployed or supplied, so public conformance and live-model reliability remain unverified. Do not retire the baseline or claim production readiness until those gates pass. No commit or deployment was performed.
 
 ## Original prototype guide
 
@@ -124,7 +159,7 @@ git clone https://github.com/cognizant-ai-lab/nsdeploy.git vendor/nsdeploy
 The inspected and tested upstream revision is `486ecf26aa8775963f9b765f894734bef1ac9817`. Keep that checkout when reproducing these results; another upstream revision needs revalidation. No upstream files are modified.
 
 ```powershell
-npm start
+npm run start:baseline
 ```
 
 Open **http://localhost:4100**. Courier is **http://localhost:4200**. To change ports, set `HANDOFF_MERCHANT_PORT` and `HANDOFF_COURIER_PORT` before starting. Discovery, peer policy and the action adapter follow those ports.
@@ -148,7 +183,7 @@ OPENROUTER_API_KEY=your-openrouter-key
 OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
 ```
 
-`npm start` loads this file with Node's built-in environment loader. Existing process environment values take precedence. Lowercase `openrouter_api_key` and `openrouter_model` are also accepted. The model setting is optional; without it, select the model in AI settings. Restart the server after changing configuration.
+`npm run start:baseline` loads this file with Node's built-in environment loader. Existing process environment values take precedence. Lowercase `openrouter_api_key` and `openrouter_model` are also accepted. The model setting is optional; without it, select the model in AI settings. Restart the server after changing configuration.
 
 `config.mjs` reads the settings. `/api/config` exposes only key availability and the model ID. The merchant's same-origin `/api/llm/chat/completions` endpoint streams requests to the fixed OpenRouter completion URL using the server key. It rejects other browser origins and does not forward browser credentials or expose the key. The official runtime uses a non-secret marker for this route. Manual browser BYOK continues to send the visitor's key directly to their selected provider. The environment-key route uses the local operator's OpenRouter account and is intended for this loopback-only demo.
 

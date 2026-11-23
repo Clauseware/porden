@@ -1,5 +1,45 @@
 # Official-runtime integration: investigation and results
 
+## Error boundaries and quality tooling follow-up
+
+Implemented consistent safe API error envelopes with diagnostic request IDs, provider/network/status classification, SDK transport and schema-error normalization, Next.js page/root render-error screens, and controlled process lifecycle errors. Sanitized diagnostic tests verify that private error messages and SQL/provider payloads do not reach responses or logs. Provider streaming failures terminate the stream after headers; they cannot retroactively become a JSON error response. No automatic write retries or successful defaults were introduced.
+
+Oxlint 1.86.0 and Oxfmt 0.71.0 are installed and locked. `bun run check:apps` passes with zero lint warnings, clean formatting and strict TypeScript checking. Formatting is scoped to `apps/` and excludes generated Next.js files, Drizzle snapshots/migrations and historical SQL. Source findings were corrected rather than suppressed. `AGENTS.md` documents the requirement; the added GitHub Actions workflow runs the same command but has not been executed remotely.
+
+Focused regression: **23 unit tests passed**, **six PostgreSQL integration tests passed**, **13 browser scenarios passed**, and **both Next.js production builds passed**. Added browser scenarios cover malformed configuration responses, safe provider errors and expired-session recovery without losing case details. Final browser evidence: `tmp/porden-browser-proof/2026-11-23T13-49-00-325Z/results.json`. Earlier end-to-end evidence and outstanding public/live-model limitations are retained below.
+
+## New-stack verification — 2026-11-23
+
+The Bun/Hono/Drizzle/PostgreSQL implementation now runs through both production-built Next.js apps in real Chromium. The test harness uses the actual `@porden/sdk`, official nsDeploy Engine/action bridge, two Hono HTTP listeners, and independently authenticated `porden_merchant` / `porden_courier` database connections. Only inference is scripted in the deterministic suite. Each run creates and removes its own schema in both organization databases; migrations and application records outside those schemas are preserved.
+
+| Check | Observed outcome |
+| --- | --- |
+| Final new-stack browser matrix | **12 passed, 0 failed**; success (with/without approved address), customer cancellation, merchant-review cancellation, courier refusal, changed delegation/proposal/write data, broken receipt, dropped acknowledgement, receipt screen and database isolation |
+| Repeated scripted success flow | **20/20** accepted transfers with verified receipts and exactly one case per attempt |
+| Concurrent duplicate requests | **20** simultaneous requests produce one case and the same signed receipt; altered payload or new request ID for the same transfer conflicts |
+| PostgreSQL integration suite | **6 passed**: migration adoption, concurrency/idempotency, invalid states, transaction rollback, reconciliation and consent validation |
+| Unit suite | **14 passed**: request contracts, cryptography, origin/session/CSRF, provider failure, SDK cancellation and missing-model fail-fast behavior |
+| Prototype regression | **6 HTTP + 2 config/prompt tests passed** |
+| TypeScript and frontend builds | Strict typecheck and both Next.js production builds passed |
+| Dependency lock | Frozen offline install passed; no dependency added for this task |
+| Organization permissions | Both roles can use their own database; connecting to the other database and assuming the other role are rejected with PostgreSQL `42501` |
+| Real-model new-stack transfer | Attempted with the configured free model; **failed before action approval**, with provider request reported as `502 PROVIDER_UNAVAILABLE`. No live reliability pass is claimed. |
+| Public HTTPS origins | Not supplied/deployed; unverified |
+
+The 20-success loop was part of an earlier 29-scenario run that also exposed two negative-test failures. Those failures were investigated rather than counted as passes. One was a scripted-model fixture parsing an official tool error as JSON; the other exposed the need to reject changed proposal arguments before entering submitted state. The rebuilt final 12-scenario matrix passes after both fixes. All results remain in the evidence directories.
+
+Reproduced application defects corrected:
+
+- **JSONB double encoding:** Drizzle serializes JSON, while prepared parameters on installed Bun 1.4.3 encode JSON strings again. Connections used by Drizzle now set `prepare:false`; database assertions require actual JSON objects.
+- **Changed proposal arguments:** the SDK now compares the proposed action arguments to the approved envelope before posting `/submit`; final prepared-action checking remains at the existing confirmation boundary.
+- **Provider network errors:** the inference endpoint returns stable `502 PROVIDER_UNAVAILABLE` rather than an unclassified internal error. It does not retry or expose credentials.
+
+Courier refusal remains the official runtime's conservative `unknown` outcome. When the runtime explicitly reports that the user declined, the SDK supplies `RECEIVER_DECLINED` for truthful refusal copy. Recovery is read-only at the receiver; dropped-ack and altered-receipt scenarios each assert a single receiver write and a single case. Unknown outcomes disable a new UI submission.
+
+Final browser evidence: `tmp/porden-browser-proof/2026-11-23T13-26-16-652Z/` (`results.json`, per-attempt traces, merchant/courier desktop and mobile screenshots). The earlier 20-success loop is retained in `tmp/porden-browser-proof/results.json`. Latest real-model failure evidence: `tmp/porden-live-proof/2026-11-23T13-28-09-871Z/` (`results.json`, `failure-1.json`, screenshot). These traces contain synthetic approved data and temporary consent tokens. Runtime source, historical migrations, `.env`, prototype data and prototype signing material were not edited. No commit or deployment occurred.
+
+The following sections record the original prototype evidence; they must not be treated as new-stack live-model or public-HTTPS passes.
+
 Date: 2026-11-23. Environment: Windows, Node v24.21.0, Python 3.15, Chromium 141.0.7390.37, JavaScript Playwright 1.62.1.
 
 ## Investigation checkpoint
