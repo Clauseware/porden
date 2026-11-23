@@ -2,7 +2,8 @@
 __pycache__/
 .pytest_cache/
 *.pem
-vendor/
+vendor/*
+!vendor/README.md
 tmp/
 node_modules/
 .next/

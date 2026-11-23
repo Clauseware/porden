@@ -9,6 +9,8 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "bun scripts/ensure-nsdeploy.ts",
+    "vendor:nsdeploy": "bun scripts/ensure-nsdeploy.ts",
     "start": "bun apps/api/src/index.ts",
     "start:baseline": "node server.mjs",
     "dev:merchant": "bun run --cwd apps/merchant-web dev",

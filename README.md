@@ -23,7 +23,7 @@ You can run two local demos.
 
 **Platform demo.** Start the platform API in `apps/api`. Start `apps/dashboard-web`. Open `/tasks` on the merchant and courier apps. Use ports 5300, 4300, 4100, and 4200.
 
-**Delivery demo.** Start separate org APIs in `apps/api`. Start the merchant and courier home pages. This demo needs the nsDeploy runtime in `vendor/nsdeploy`.
+**Delivery demo.** Start separate org APIs in `apps/api`. Start the merchant and courier home pages. This demo needs the nsDeploy runtime in `vendor/nsdeploy`. See [vendor/README.md](vendor/README.md).
 
 For setup steps and API details, see [PLATFORM.md](PLATFORM.md).
 
@@ -31,7 +31,7 @@ For setup steps and API details, see [PLATFORM.md](PLATFORM.md).
 
 You need Bun 1.4 or newer. You need Node 22 or newer. You need Docker for PostgreSQL. The compose file is in `infra/postgres/compose.yml`.
 
-For the delivery demo only, clone [nsDeploy](https://github.com/cognizant-ai-lab/nsdeploy) into `vendor/nsdeploy`.
+The delivery demo needs [nsDeploy](https://github.com/cognizant-ai-lab/nsdeploy). That tree is not in Git. When you run `bun install`, `postinstall` clones the pinned revision into `vendor/nsdeploy`. You need Git installed. Set `PORDEN_SKIP_NSDEPLOY=1` to skip auto clone. Run `bun run vendor:nsdeploy` to clone manually. The pin is documented in [vendor/README.md](vendor/README.md).
 
 ## Platform demo
 
