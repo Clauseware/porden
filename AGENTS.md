@@ -12,12 +12,21 @@ Applies to the entire repository. More specific instructions may be added only w
 - Never silently swallow errors or invent successful outcomes.
 - Do not stage, commit, deploy, or make destructive changes without explicit authorization.
 
+## TypeScript
+
+- Do not use `any` or type assertions (`as`) to bypass type checking; prefer inference, narrowing, and correcting the source type.
+- Model mutually exclusive states and alternatives with discriminated union types.
+- Keep interfaces focused on clear object contracts; derive types from validation schemas when a schema already defines the contract.
+
 ## Backend (Bun, Hono, PostgreSQL, Drizzle)
 
 - Validate external input at the endpoint route boundary using the project's existing schema validation approach.
 - Derive TypeScript types from validation schemas; pass validated values into services so downstream types and autocomplete work without casts or duplicated interfaces.
 - Prefer Hono's typed validation context and `c.req.valid(...)` where supported by the existing setup.
-- Keep handlers thin; put reusable domain logic in existing service modules.
+- Keep Hono routes focused on HTTP concerns: validate input, apply request-level authentication, call a service, and shape the response. Do not put business rules or database queries in handlers.
+- Put handoff and other domain decisions in service modules. Keep reusable Drizzle query functions in `db/queries`; services coordinate domain transitions and persistence.
+- Import modules from their source files. Do not add barrel files that only re-export another module.
+- Use the shared Pino logger and HTTP error handler for request logging and error responses. Do not add ad hoc loggers or duplicate global error mapping.
 - Validate state transitions and authorization before side effects. Use database constraints and transactions to preserve invariants.
 - Handle duplicate requests and uncertain network outcomes explicitly; preserve idempotency and reconciliation behavior.
 - Scope database access to the appropriate organization. Never trust organization identifiers supplied by a client without authorization.
