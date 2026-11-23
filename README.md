@@ -4,40 +4,46 @@
 
 [![Apps quality](https://github.com/Clauseware/porden/actions/workflows/apps-quality.yml/badge.svg)](https://github.com/Clauseware/porden/actions/workflows/apps-quality.yml)
 
-Reference implementation for [Porden](https://porden.dev): versioned task handoffs between organizations, with explicit approvals and signed receipts.
+This repository is the reference code for [Porden](https://porden.dev).
 
-The product code lives under `apps/` — Hono APIs, Next.js UIs, PostgreSQL via Drizzle. Shared types and the browser client are in `packages/` and are consumed by those apps.
+Porden moves tasks between organizations. Each handoff has a version, an approval step, and a signed receipt.
+
+The product code is in `apps/`. The apps use Hono, Next.js, and PostgreSQL. Shared types and the browser client are in `packages/`. The apps import those packages.
 
 ## Apps
 
 | Directory | Role |
 | --- | --- |
-| [`apps/api`](apps/api) | Platform service (`/api/v2`) and per-org delivery APIs (`/api/v1`) |
-| [`apps/dashboard-web`](apps/dashboard-web) | Handoff inbox and human approval UI |
-| [`apps/merchant-web`](apps/merchant-web) | Merchant origin (delivery demo at `/`, platform consumer at `/tasks`) |
-| [`apps/courier-web`](apps/courier-web) | Courier origin (same split as merchant) |
+| [`apps/api`](apps/api) | Platform API (`/api/v2`) and delivery APIs (`/api/v1`) |
+| [`apps/dashboard-web`](apps/dashboard-web) | Handoff list and human approval UI |
+| [`apps/merchant-web`](apps/merchant-web) | Merchant site. Delivery demo at `/`. Platform tasks at `/tasks` |
+| [`apps/courier-web`](apps/courier-web) | Courier site. Same paths as the merchant site |
 
-Two local setups:
+You can run two local demos.
 
-1. **Platform** — `apps/api` platform entrypoint, `apps/dashboard-web`, and `/tasks` on the merchant/courier apps (ports 5300 / 4300 / 4100 / 4200).
-2. **Delivery** — separate `apps/api` org configs plus merchant/courier home pages; uses the nsDeploy runtime (`vendor/nsdeploy`).
+**Platform demo.** Start the platform API in `apps/api`. Start `apps/dashboard-web`. Open `/tasks` on the merchant and courier apps. Use ports 5300, 4300, 4100, and 4200.
 
-Platform operator guide (paths, accounts, API): [PLATFORM.md](PLATFORM.md).
+**Delivery demo.** Start separate org APIs in `apps/api`. Start the merchant and courier home pages. This demo needs the nsDeploy runtime in `vendor/nsdeploy`.
+
+For setup steps and API details, see [PLATFORM.md](PLATFORM.md).
 
 ## Prerequisites
 
-- Bun 1.4+
-- Node 22+
-- Docker (Postgres via `infra/postgres/compose.yml`)
-- [nsDeploy](https://github.com/cognizant-ai-lab/nsdeploy) under `vendor/nsdeploy` (delivery demo only)
+You need Bun 1.4 or newer. You need Node 22 or newer. You need Docker for PostgreSQL. The compose file is in `infra/postgres/compose.yml`.
+
+For the delivery demo only, clone [nsDeploy](https://github.com/cognizant-ai-lab/nsdeploy) into `vendor/nsdeploy`.
 
 ## Platform demo
+
+Run these commands from the repository root.
 
 ```powershell
 bun install --frozen-lockfile
 docker compose -f infra/postgres/compose.yml up -d --wait
 bun run setup:platform:demo
 ```
+
+Start each process in a separate terminal.
 
 ```powershell
 bun run dev:platform
@@ -53,9 +59,11 @@ bun run dev:courier
 | Company A (`/tasks`) | http://localhost:4100/tasks |
 | Company B (`/tasks`) | http://localhost:4200/tasks |
 
-Credentials: `tmp/platform-demo/accounts.json` (gitignored). Use one browser profile per demo account.
+The setup script writes demo accounts to `tmp/platform-demo/accounts.json`. That file is not in Git. Use one browser profile for each demo account.
 
 ## Delivery demo
+
+Run these commands from the repository root.
 
 ```powershell
 bun install
@@ -67,7 +75,9 @@ bun run db:migrate:merchant
 bun run db:migrate:courier
 ```
 
-Set `SESSION_SECRET`, `DEMO_PASSWORD`, and the same `PARTNER_SECRET` in both files under `apps/api/`, then:
+Set `SESSION_SECRET`, `DEMO_PASSWORD`, and `PARTNER_SECRET` in both env files under `apps/api/`. Use the same `PARTNER_SECRET` in both files.
+
+Start each process in a separate terminal.
 
 ```powershell
 bun run dev:api:merchant
@@ -76,11 +86,11 @@ bun run dev:merchant
 bun run dev:courier
 ```
 
-Merchant UI: http://localhost:4100 — Courier: http://localhost:4200 (APIs on 5100 / 5200).
+Open the merchant UI at http://localhost:4100. Open the courier UI at http://localhost:4200. The org APIs listen on ports 5100 and 5200.
 
 ## SDK
 
-Used from app code (for example `apps/dashboard-web`) via `@porden/sdk`:
+Import `createHandoffClient` from `@porden/sdk`. The dashboard app uses this client.
 
 ```typescript
 import { createHandoffClient } from '@porden/sdk';
@@ -101,11 +111,11 @@ await client.createHandoff({
 });
 ```
 
-Mutations require a stable `requestId` for idempotency. Contract definitions: `packages/contracts` (imported by `apps/api` and the SDK).
+Each mutation needs a `requestId`. Send the same `requestId` again to repeat an identical request. The API types are in `packages/contracts`.
 
 ## Tests and CI
 
-All lint/format/typecheck targets `apps/`:
+Lint, format check, and TypeScript run only on `apps/`.
 
 ```powershell
 bun run check:apps
@@ -114,4 +124,4 @@ $env:PORDEN_TEST_DATABASE_URL='postgres://porden_admin:local-admin-only@127.0.0.
 bun run test:api
 ```
 
-Browser suites (build the Next apps first): `bun run test:platform:browser`, `bun run test:porden:browser`.
+Build the Next.js apps before you run a browser test. Use `bun run test:platform:browser` or `bun run test:porden:browser`.
