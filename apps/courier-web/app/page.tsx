@@ -8,6 +8,7 @@ export default async function Page({
   const { receiptId } = await searchParams;
   return (
     <>
+      <Link href="/tasks">Open Company B task integration</Link>
       <header className="topbar">
         <Link className="wordmark" href="/">
           porden<span> / courier</span>

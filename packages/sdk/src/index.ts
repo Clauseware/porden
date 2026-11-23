@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { PordenError } from './error';
+export { PordenError } from './error';
+export { createHandoffClient, HandoffWriteUnknown, type HandoffClientOptions } from './handoff-client';
 import { Approval, CaseResponse, CreateDraft, Draft, Fields, VerifiedReceipt, canonicalize,
   Session, PublicConfig, ReceivedCase, SignIn, ErrorResponse, errorMessages, type DamageData, type TransferReview, type ActionArguments, type PordenEvent, type TransferOutcome } from '@porden/contracts';
 
@@ -18,9 +21,6 @@ export type ClientOptions = {
   model?: string;
   onEvent?: (event: PordenEvent) => void;
 };
-export class PordenError extends Error {
-  constructor(public code: string, public status: number, public requestId?: string, options?: ErrorOptions) {super(code,options);}
-}
 export function getErrorMessage(error: unknown) {
   if (!(error instanceof PordenError)) return errorMessages.HANDOFF_FAILED;
   const message=errorMessages[error.code] || errorMessages.HTTP_ERROR;

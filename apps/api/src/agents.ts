@@ -34,8 +34,8 @@ const runtimeFiles = new Set([
 
 export function agentRoutes(app: Hono, config: Config) {
   const { role, origin, peerOrigin } = config;
-  const front = `${role}_front`,
-    links = role === 'merchant' ? { courier: `${peerOrigin}/courier` } : {};
+  const front = `${role}_front`;
+  const links = role === 'merchant' ? { courier: `${peerOrigin}/courier` } : {};
   const linking = {
     protocol: 'nsdeploy-link/v1',
     site: origin,
@@ -72,7 +72,7 @@ export function agentRoutes(app: Hono, config: Config) {
         name: role,
         front_man: front,
         hocon: `./${role}.network.json`,
-        description: 'Customer-approved damage case transfer',
+        description: 'Versioned Porden task handoffs',
       },
     ],
     llm_router: {
@@ -90,9 +90,7 @@ export function agentRoutes(app: Hono, config: Config) {
     },
     linking,
     agent_mcp: mcp,
-    ...(role === 'courier'
-      ? { actions: { version: 1, bridge: './action-bridge.html', module: './actions.js' } }
-      : {}),
+    actions: { version: 1, bridge: './action-bridge.html', module: './actions.js' },
   };
   const documents: Record<string, unknown> = {
     '/agent-manifest.json': manifest,
@@ -123,24 +121,19 @@ export function agentRoutes(app: Hono, config: Config) {
     const network = await Bun.file(
       new URL(`../../../public/${role}/${role}.network.json`, import.meta.url),
     ).json();
-    if (role === 'courier')
-      network.tools[0].instructions = network.tools[0].instructions.replace(
-        'Only orderReference, damageDescription and an explicitly included deliveryAddress are permitted.',
-        'Arguments contain transferId, caseType, data and approval. Copy the entire envelope unchanged. Only approved fields occur inside data.',
-      );
     c.header('Access-Control-Allow-Origin', '*');
     return c.json(network);
   });
-  if (role === 'courier') {
-    app.get('/action-policy.json', (c) => c.json({ callerOrigins: [peerOrigin] }));
-    app.get('/actions.js', async (c) => {
-      c.header('Content-Type', 'text/javascript; charset=utf-8');
-      return c.body(await Bun.file(new URL('../public/actions.js', import.meta.url)).text());
-    });
-    app.get('/action-bridge.html', (c) =>
-      c.html(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Porden courier approval</title><h1>Courier approval</h1><p>Sign in to the courier site before approving a case. This confirms receipt of your case, not resolution.</p><script type="module" src="/runtime/action-bridge.js"></script></html>`,
-      ),
-    );
-  }
+  app.get('/action-policy.json', (c) =>
+    c.json({ callerOrigins: role === 'courier' ? [peerOrigin, origin] : [origin] }),
+  );
+  app.get('/actions.js', async (c) => {
+    c.header('Content-Type', 'text/javascript; charset=utf-8');
+    return c.body(await Bun.file(new URL('../public/actions.js', import.meta.url)).text());
+  });
+  app.get('/action-bridge.html', (c) =>
+    c.html(
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Porden ${role} action confirmation</title><h1>Porden ${role} action confirmation</h1><p>Sign in before submitting a platform handoff action. Human approvals remain in the dashboard.</p><script type="module" src="/runtime/action-bridge.js"></script></html>`,
+    ),
+  );
 }

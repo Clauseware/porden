@@ -94,7 +94,10 @@ export function signer(config: Pick<Config, 'keyPath' | 'keyId'>) {
   };
   return {
     jwk,
-    sign(payload: unknown, typ: 'porden-approval+jwt' | 'porden-receipt+jwt') {
+    sign(
+      payload: unknown,
+      typ: 'porden-approval+jwt' | 'porden-receipt+jwt' | 'porden-handoff-receipt+jwt',
+    ) {
       const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: config.keyId, typ })).toString(
         'base64url',
       );

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export * from './handoffs';
 
 export const Origin = z.url().refine(value => {
   const url = new URL(value);
@@ -77,6 +78,8 @@ export const Session = z.strictObject({customerId: z.literal('demo-user'), csrf:
 export const ErrorResponse = z.object({error:z.object({code:z.string().min(1),message:z.string().optional(),requestId:z.uuid().optional()})});
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 export const errorMessages: Record<string,string> = {
+  OUTCOME_UNKNOWN:'The write outcome is unknown. Check the saved operation before submitting anything else.',
+  SESSION_CHANGED:'The signed-in account changed. Sign in again before continuing.',
   INVALID_INPUT:'Check the supplied details and try again.', INVALID_RESPONSE:'The service returned an invalid response. Check the transfer before trying again.',
   NETWORK_ERROR:'Could not reach the service. Check your connection and the existing transfer before trying again.',
   UNAUTHORIZED_ACTION:'Sign in again before continuing.', ORIGIN_NOT_ALLOWED:'This site is not allowed to make that request.',

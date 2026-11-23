@@ -1,0 +1,114 @@
+.task-consumer {
+  font:
+    16px/1.6 Arial,
+    sans-serif;
+  color: #1f1f1f;
+  max-width: 1000px;
+  margin: auto;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.task-consumer header,
+.task-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.task-consumer header button {
+  margin-left: auto;
+}
+.task-consumer h1,
+.task-consumer h2,
+.task-consumer h3 {
+  color: #0f3d2e;
+}
+.task-consumer h1 {
+  font-size: 36px;
+}
+.task-card {
+  background: #fffefa;
+  border: 1px solid #b7c9bd;
+  border-radius: 8px;
+  padding: 24px;
+  margin: 24px 0;
+}
+.task-consumer label {
+  display: block;
+  margin: 14px 0;
+}
+.task-consumer input,
+.task-consumer select,
+.task-consumer textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid #4e7c66;
+  border-radius: 4px;
+  padding: 10px;
+  font: inherit;
+  background: white;
+  color: #1f1f1f;
+}
+.task-consumer form {
+  max-width: 680px;
+}
+.task-consumer button {
+  padding: 10px 16px;
+  border: 1px solid #0f3d2e;
+  border-radius: 5px;
+  background: #0f3d2e;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+.task-consumer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.task-consumer .task-link {
+  background: transparent;
+  color: #0f3d2e;
+  text-decoration: underline;
+  text-align: left;
+  padding: 4px;
+}
+.task-consumer a {
+  color: #0f3d2e;
+  overflow-wrap: anywhere;
+}
+.task-error {
+  background: #fae6df;
+  padding: 16px;
+  border-left: 4px solid #9c3927;
+}
+.task-notice {
+  background: #e0ecdf;
+  padding: 16px;
+}
+.task-consumer li {
+  margin: 12px 0;
+}
+.task-consumer footer {
+  margin-top: 40px;
+  border-top: 1px solid #b7c9bd;
+  padding-top: 20px;
+}
+.task-consumer fieldset {
+  border: 1px solid #b7c9bd;
+  margin: 20px 0;
+}
+.task-consumer :focus-visible {
+  outline: 3px solid #ad7028;
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .task-consumer {
+    padding: 0;
+  }
+  .task-card {
+    padding: 16px;
+  }
+  .task-consumer h1 {
+    font-size: 28px;
+  }
+}
