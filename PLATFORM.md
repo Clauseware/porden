@@ -57,6 +57,8 @@ Migrations use a separate platform journal and schema definitions. Existing merc
 
 The central database is private to Porden; external organizations access the API rather than receiving its database credentials. Local setup revokes public database connections. Cross-organization API queries return 404 for invisible handoffs, workflows and decisions.
 
+The API uses Pino JSON logs. Request completion records include the server request ID, route template, method, status and duration; error records include sanitized diagnostic codes and stack frames. Request payloads, credentials, SQL parameters and upstream response bodies are not logged. Set `LOG_LEVEL` to control verbosity.
+
 ## API and SDK
 
 `createHandoffClient` is exported by `@porden/sdk`. The existing `createPordenClient` and official nsDeploy adapter retain their behavior.
