@@ -27,12 +27,21 @@
     "test": "python -m pytest tests/test_api.py -q",
     "test:config": "node --test tests/test_openrouter.mjs tests/test_proposal_format.mjs",
     "test:live": "node --test tests/test_live_handoff.mjs",
-    "test:browser": "node --test tests/test_runtime.mjs"
+    "test:browser": "node --test tests/test_runtime.mjs",
+    "test:porden:browser": "bun tests/test_porden_browser.mjs",
+    "test:porden:live": "bun tests/test_porden_browser.mjs --live",
+    "lint": "oxlint -c apps/.oxlintrc.json --deny-warnings apps",
+    "lint:fix": "oxlint -c apps/.oxlintrc.json --deny-warnings --fix apps",
+    "format": "oxfmt --config apps/.oxfmtrc.json --write apps",
+    "format:check": "oxfmt --config apps/.oxfmtrc.json --check apps",
+    "check:apps": "bun run lint && bun run format:check && bun run typecheck"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
     "typescript": "7.0.2"
   },
   "engines": {
