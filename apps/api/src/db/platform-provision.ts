@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { organizations, principals } from './platform-schema';
 import { loadPlatformConfig } from '../platform-config';
-import { reportError } from '../security';
+import { reportError } from '../observability/logger';
 
 export const Provisioning = z.strictObject({
   organizations: z

@@ -5,7 +5,8 @@ import { migrate as migrateDrizzle } from 'drizzle-orm/bun-sql/migrator';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config';
-import { hash, reportError } from '../security';
+import { hash } from '../security';
+import { reportError } from '../observability/logger';
 import { migrationMetadata } from './metadata';
 
 export async function migrate(client: SQL, role: 'merchant' | 'courier') {

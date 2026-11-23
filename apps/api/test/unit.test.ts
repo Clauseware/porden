@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config';
 import { signer, verifyToken, sessionTools, hash } from '../src/security';
 import { createApp } from '../src/app';
 import type { store } from '../src/db/store';
+import { logger } from '../src/observability/logger';
 import { signedReceiptFixture, invalidReceiptFixture } from '@porden/sdk/fixtures';
 
 const directory = resolve(`tmp/unit-${crypto.randomUUID()}`);
@@ -275,7 +276,7 @@ describe('consistent failure boundaries', () => {
     await check(await notReady.request('/readyz'), 'NOT_READY', 503);
   });
   test('nested system codes are recorded without secrets or query bodies', async () => {
-    const logs = spyOn(console, 'error').mockImplementation(() => {});
+    const logs = spyOn(logger, 'error').mockImplementation(() => {});
     try {
       const cause = Object.assign(new Error('private-secret'), { code: 'EACCES' });
       await check(

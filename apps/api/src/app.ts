@@ -3,7 +3,6 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { getCookie, setCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
-import { DrizzleQueryError } from 'drizzle-orm';
 import {
   CreateDraft,
   ApproveTransfer,
@@ -17,16 +16,17 @@ import {
 } from '@porden/contracts';
 import { agentRoutes } from './agents';
 import {
-  ApiError,
   equal,
   sessionTools,
   signer,
   verifyApproval,
   verifyReceipt,
-  errorDiagnostics,
-  reportError,
   type Fetcher,
 } from './security';
+import { ApiError } from './application/errors';
+import { reportError } from './observability/logger';
+import { errorResponse, notFoundResponse } from './http/error-handler';
+import { requestLogging } from './http/request-logging';
 import type { Config } from './config';
 import type { store } from './db/store';
 
@@ -50,41 +50,27 @@ export function createApp(
     c.header('X-Request-Id', requestId);
     return c.json({ error: { code, message, requestId } }, status);
   }
+  app.use('*', requestLogging);
   app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
-    c.header('X-Request-Id', crypto.randomUUID());
-    try {
-      await next();
-    } catch (cause) {
-      throw cause instanceof Error ? cause : new Error('Unexpected request failure', { cause });
-    }
+    await next();
   });
   app.use(
     '/api/*',
     bodyLimit({ maxSize: 65536, onError: (c) => failure(c, 'PAYLOAD_TOO_LARGE', 413) }),
   );
   app.onError((error, c) => {
-    const databaseError = error instanceof DrizzleQueryError ? error.cause : error;
-    const { systemCode } = errorDiagnostics(databaseError);
-    if (systemCode === '23505') return failure(c, 'REQUEST_CONFLICT', 409);
-    if (error instanceof ApiError) {
-      if (error.status >= 500 || error.status === 429)
-        reportError(c.req.routePath, error, c.res.headers.get('X-Request-Id') || undefined);
-      return failure(c, error.code, error.status);
-    }
-    if (error instanceof z.ZodError || error instanceof SyntaxError)
-      return failure(c, 'INVALID_INPUT', 400);
-    reportError(c.req.routePath, error, c.res.headers.get('X-Request-Id') || undefined);
-    if (
-      error instanceof DrizzleQueryError &&
-      systemCode &&
-      /^(08|53|57P|ECONN|ETIMEDOUT|ERR_POSTGRES_CONNECTION)/.test(systemCode)
-    )
-      return failure(c, 'DATABASE_UNAVAILABLE', 503);
-    return failure(c, 'INTERNAL_ERROR', 500);
+    const requestId = c.res.headers.get('X-Request-Id') || crypto.randomUUID();
+    c.header('X-Request-Id', requestId);
+    const result = errorResponse(error, requestId);
+    return c.json(result.body, result.status);
   });
-  app.notFound((c) => failure(c, 'NOT_FOUND', 404));
+  app.notFound((c) => {
+    const requestId = c.res.headers.get('X-Request-Id') || crypto.randomUUID();
+    c.header('X-Request-Id', requestId);
+    return c.json(notFoundResponse(requestId), 404);
+  });
   app.get('/healthz', (c) => c.json({ status: 'ok', role: config.role }));
   app.get('/readyz', async (c) => {
     try {

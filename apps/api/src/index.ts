@@ -1,6 +1,7 @@
 import { SQL } from 'bun';
 import { loadConfig } from './config';
-import { signer, reportError } from './security';
+import { signer } from './security';
+import { reportError } from './observability/logger';
 import { store } from './db/store';
 import { createApp } from './app';
 

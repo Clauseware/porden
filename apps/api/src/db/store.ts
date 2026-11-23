@@ -11,7 +11,8 @@ import {
   type ApproveTransfer,
   type CreateCase,
 } from '@porden/contracts';
-import { ApiError, hash, type signer } from '../security';
+import { ApiError } from '../application/errors';
+import { hash, type signer } from '../security';
 import type { Config } from '../config';
 import { transfers, transferEvents } from './merchant-schema';
 import { cases, receipts, shipments } from './courier-schema';

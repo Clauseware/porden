@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/bun-sql';
 import { migrate } from 'drizzle-orm/bun-sql/migrator';
 import { fileURLToPath } from 'node:url';
 import { loadPlatformConfig } from '../platform-config';
-import { reportError } from '../security';
+import { reportError } from '../observability/logger';
 
 export async function migratePlatform(client: SQL) {
   const connection = await client.reserve();

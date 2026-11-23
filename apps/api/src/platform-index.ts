@@ -1,6 +1,7 @@
 import { SQL } from 'bun';
 import { loadPlatformConfig } from './platform-config';
-import { signer, reportError } from './security';
+import { signer } from './security';
+import { reportError } from './observability/logger';
 import { platformStore } from './db/platform-store';
 import { platformAuth } from './platform-auth';
 import { createPlatformApp } from './platform-app';

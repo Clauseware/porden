@@ -4,7 +4,7 @@ import { and, eq, gt } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import type { Principal } from '@porden/contracts';
 import { principals, platformSessions } from './db/platform-schema';
-import { ApiError } from './security';
+import { ApiError } from './application/errors';
 import type { PlatformConfig } from './platform-config';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');

@@ -18,7 +18,8 @@ import {
   FinishHandoff,
   HandoffQuery,
 } from '@porden/contracts';
-import { ApiError, hash, type signer } from '../security';
+import { ApiError } from '../application/errors';
+import { hash, type signer } from '../security';
 import {
   organizations,
   handoffs,

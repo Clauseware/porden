@@ -1,10 +1,8 @@
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
-import { HTTPException } from 'hono/http-exception';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { bodyLimit } from 'hono/body-limit';
-import { DrizzleQueryError } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   type Principal,
@@ -18,9 +16,11 @@ import {
   RevisionDecision,
   FinishHandoff,
   AuthorizationQuery,
-  errorMessages,
 } from '@porden/contracts';
-import { ApiError, equal, reportError, errorDiagnostics, type signer } from './security';
+import { equal, type signer } from './security';
+import { ApiError } from './application/errors';
+import { errorResponse, notFoundResponse } from './http/error-handler';
+import { logRequest } from './observability/logger';
 import type { PlatformConfig } from './platform-config';
 import type { platformStore } from './db/platform-store';
 import type { platformAuth } from './platform-auth';
@@ -39,62 +39,31 @@ export function createPlatformApp(
   const app = new Hono<{ Variables: { principal: Principal; requestId: string } }>();
   const cookie = 'porden_platform_session';
   app.use('*', async (c, next) => {
-    c.set('requestId', crypto.randomUUID());
-    c.header('X-Request-Id', c.get('requestId'));
+    const requestId = crypto.randomUUID();
+    const startedAt = performance.now();
+    c.set('requestId', requestId);
+    c.header('X-Request-Id', requestId);
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
-    await next();
+    try {
+      await next();
+    } catch (cause) {
+      throw cause instanceof Error ? cause : new Error('Unexpected request failure', { cause });
+    } finally {
+      logRequest({
+        requestId,
+        method: c.req.method,
+        route: c.req.routePath || 'unmatched',
+        status: c.res.status,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    }
   });
   app.onError((error, c) => {
-    const cause = error instanceof DrizzleQueryError ? error.cause : error;
-    const { systemCode } = errorDiagnostics(cause);
-    let code = 'INTERNAL_ERROR';
-    let status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500 | 502 | 503 | 504 = 500;
-    if (error instanceof ApiError) {
-      code = error.code;
-      status = error.status;
-    } else if (
-      error instanceof z.ZodError ||
-      error instanceof SyntaxError ||
-      (error instanceof HTTPException && error.status === 400)
-    ) {
-      code = 'INVALID_INPUT';
-      status = 400;
-    } else if (systemCode === '23505') {
-      code = 'REQUEST_CONFLICT';
-      status = 409;
-    } else if (
-      error instanceof DrizzleQueryError &&
-      systemCode &&
-      /^(08|53|57P|ECONN|ETIMEDOUT|ERR_POSTGRES_CONNECTION)/.test(systemCode)
-    ) {
-      code = 'DATABASE_UNAVAILABLE';
-      status = 503;
-    }
-    if (status >= 500) reportError(c.req.routePath, error, c.get('requestId'));
-    return c.json(
-      {
-        error: {
-          code,
-          message: errorMessages[code] || errorMessages.INTERNAL_ERROR,
-          requestId: c.get('requestId'),
-        },
-      },
-      status,
-    );
+    const result = errorResponse(error, c.get('requestId'));
+    return c.json(result.body, result.status);
   });
-  app.notFound((c) =>
-    c.json(
-      {
-        error: {
-          code: 'NOT_FOUND',
-          message: errorMessages.NOT_FOUND,
-          requestId: c.get('requestId'),
-        },
-      },
-      404,
-    ),
-  );
+  app.notFound((c) => c.json(notFoundResponse(c.get('requestId')), 404));
   app.use(
     '/api/v2/*',
     bodyLimit({

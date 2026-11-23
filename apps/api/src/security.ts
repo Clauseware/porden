@@ -17,64 +17,7 @@ import {
   type ReceiptSubmission,
 } from '@porden/contracts';
 import type { Config } from './config';
-
-export class ApiError extends Error {
-  constructor(
-    public code: string,
-    public status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 502 | 503 | 504,
-    message = code,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
-export function errorDiagnostics(error: unknown) {
-  let systemCode: string | undefined,
-    upstreamStatus: number | undefined,
-    configurationField: string | undefined;
-  for (
-    let current: unknown = error, depth = 0;
-    current && typeof current === 'object' && depth < 5;
-    depth++
-  ) {
-    if ('errno' in current && typeof current.errno === 'string') systemCode = current.errno;
-    else if ('code' in current && typeof current.code === 'string') systemCode = current.code;
-    if ('upstreamStatus' in current && typeof current.upstreamStatus === 'number')
-      upstreamStatus = current.upstreamStatus;
-    if (
-      'configurationField' in current &&
-      typeof current.configurationField === 'string' &&
-      /^[A-Z_]+$/.test(current.configurationField)
-    )
-      configurationField = current.configurationField;
-    current = 'cause' in current ? current.cause : undefined;
-  }
-  // Never log error messages, SQL, request payloads, headers or provider response bodies.
-  return {
-    systemCode:
-      systemCode && /^(CONFIGURATION_INVALID|E[A-Z_]+|ERR_[A-Z_]+|[A-Z0-9]{5})$/.test(systemCode)
-        ? systemCode
-        : undefined,
-    upstreamStatus,
-    configurationField,
-  };
-}
-export function reportError(operation: string, error: unknown, requestId?: string) {
-  const frames =
-    error instanceof Error
-      ? error.stack
-          ?.split('\n')
-          .filter((line) => /^\s+at /.test(line))
-          .slice(0, 4)
-      : undefined;
-  console.error('Porden error', {
-    operation,
-    requestId,
-    errorName: error instanceof Error ? error.name : 'NonError',
-    ...errorDiagnostics(error),
-    frames,
-  });
-}
+import { ApiError } from './application/errors';
 export const hash = (value: unknown) =>
   createHash('sha256').update(canonicalize(value)).digest('hex');
 export function equal(a: string, b: string) {

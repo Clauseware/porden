@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { migratePlatform } from '../apps/api/src/db/platform-migrate';
 import { provisionPlatform } from '../apps/api/src/db/platform-provision';
-import { reportError } from '../apps/api/src/security';
+import { reportError } from '../apps/api/src/observability/logger';
 
 // shortcut: provisions the documented local Compose database only; use managed provisioning for deployment.
 async function setup() {
