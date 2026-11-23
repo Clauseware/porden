@@ -2,7 +2,7 @@ import { SQL } from 'bun';
 import { loadPlatformConfig } from './platform-config';
 import { signer } from './security';
 import { reportError } from './observability/logger';
-import { platformStore } from './db/platform-store';
+import { handoffService } from './services/handoffs';
 import { platformAuth } from './platform-auth';
 import { createPlatformApp } from './platform-app';
 
@@ -12,7 +12,7 @@ async function main() {
     const config = loadPlatformConfig(),
       signing = signer(config);
     client = new SQL({ url: config.databaseUrl, prepare: false });
-    const db = platformStore(client, signing);
+    const db = handoffService(client, signing);
     await db.ready();
     const app = createPlatformApp(config, db, platformAuth(client, config), signing);
     const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch });

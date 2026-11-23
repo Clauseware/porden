@@ -1,6 +1,6 @@
 import type { SQL } from 'bun';
 import { randomUUID } from 'node:crypto';
-import { and, or, eq, sql, asc, count, inArray } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import { z } from 'zod';
 import type {
@@ -21,29 +21,25 @@ import {
 import { ApiError } from '../application/errors';
 import { hash, type signer } from '../security';
 import {
-  organizations,
+  handoffQueries,
+  type HandoffConnection,
+  type HandoffTransaction,
+} from '../db/queries/handoffs';
+import {
   handoffs,
   handoffVersions,
   handoffRevisions,
   handoffReceipts,
-} from './platform-schema';
+} from '../db/platform-schema';
 
-export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
+export function handoffService(client: SQL, signing: ReturnType<typeof signer>) {
   const db = drizzle(client);
-  type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-  type Connection = typeof db | Transaction;
+  type Transaction = HandoffTransaction;
+  type Connection = HandoffConnection;
   type Row = typeof handoffs.$inferSelect;
-  const visible = (principal: Principal) =>
-    or(
-      eq(handoffs.senderOrganizationId, principal.organizationId),
-      eq(handoffs.receiverOrganizationId, principal.organizationId),
-    );
+  const queries = handoffQueries(db);
   async function owned(connection: Connection, principal: Principal, id: string, lock = false) {
-    const query = connection
-      .select()
-      .from(handoffs)
-      .where(and(eq(handoffs.id, id), visible(principal)));
-    const [row] = await (lock ? query.for('update') : query);
+    const row = await queries.owned(connection, principal, id, lock);
     if (!row) throw new ApiError('NOT_FOUND', 404);
     return row;
   }
@@ -62,10 +58,7 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
     if (row.currentVersion !== version) throw new ApiError('REQUEST_CONFLICT', 409);
   }
   async function version(connection: Connection, id: string, value: number) {
-    const [row] = await connection
-      .select()
-      .from(handoffVersions)
-      .where(and(eq(handoffVersions.handoffId, id), eq(handoffVersions.version, value)));
+    const row = await queries.version(connection, id, value);
     if (!row) throw new ApiError('REQUEST_CONFLICT', 409);
     return row;
   }
@@ -74,55 +67,9 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
     principal: Principal,
     id: string,
   ): Promise<HandoffDetail> {
-    const row = await owned(connection, principal, id);
-    const versions = await connection
-      .select()
-      .from(handoffVersions)
-      .where(eq(handoffVersions.handoffId, id))
-      .orderBy(asc(handoffVersions.version));
-    const revisions = await connection
-      .select()
-      .from(handoffRevisions)
-      .where(eq(handoffRevisions.handoffId, id))
-      .orderBy(asc(handoffRevisions.proposedVersion));
-    const receipts = await connection
-      .select()
-      .from(handoffReceipts)
-      .where(eq(handoffReceipts.handoffId, id))
-      .orderBy(asc(handoffReceipts.occurredAt), asc(handoffReceipts.id));
-    const participants = await connection
-      .select()
-      .from(organizations)
-      .where(inArray(organizations.id, [row.senderOrganizationId, row.receiverOrganizationId]));
-    const current = versions.find((item) => item.version === row.currentVersion);
-    if (!current) throw Error('Missing handoff version');
-    return {
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      goal: current.terms.goal,
-      senderName: participants.find((item) => item.id === row.senderOrganizationId)!.name,
-      receiverName: participants.find((item) => item.id === row.receiverOrganizationId)!.name,
-      versions: versions.map((item) => ({
-        version: item.version,
-        terms: item.terms,
-        termsSha256: item.termsSha256,
-        createdBy: item.createdBy,
-        createdAt: item.createdAt.toISOString(),
-      })),
-      revisions: revisions.map((item) => ({
-        id: item.id,
-        baseVersion: item.baseVersion,
-        proposedVersion: item.proposedVersion,
-        reason: item.reason,
-        proposerId: item.proposerId,
-        status: item.status,
-        decidedBy: item.decidedBy,
-        createdAt: item.createdAt.toISOString(),
-        decidedAt: item.decidedAt?.toISOString() || null,
-      })),
-      receipts: receipts.map((item) => ({ ...item.claims, signedReceipt: item.signedReceipt })),
-    };
+    const result = await queries.detail(connection, principal, id);
+    if (!result) throw new ApiError('NOT_FOUND', 404);
+    return result;
   }
   async function mutate(
     principal: Principal,
@@ -136,15 +83,7 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${principal.id + ':' + requestId},0))`,
       );
-      const [previous] = await tx
-        .select()
-        .from(handoffReceipts)
-        .where(
-          and(
-            eq(handoffReceipts.principalId, principal.id),
-            eq(handoffReceipts.requestId, requestId),
-          ),
-        );
+      const previous = await queries.receiptByRequest(tx, principal.id, requestId);
       if (previous) {
         if (previous.requestSha256 !== fingerprint) throw new ApiError('REQUEST_CONFLICT', 409);
         await owned(tx, principal, previous.handoffId);
@@ -210,13 +149,10 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
   }
   const api = {
     async ready() {
-      await db.select({ id: handoffs.id }).from(handoffs).limit(1);
+      await queries.ready();
     },
     async organizations() {
-      return db
-        .select({ id: organizations.id, name: organizations.name })
-        .from(organizations)
-        .orderBy(asc(organizations.name));
+      return queries.organizations();
     },
     get(principal: Principal, id: string) {
       return db.transaction((tx) => detail(tx, principal, id), {
@@ -227,34 +163,15 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
     async list(principal: Principal, input: z.infer<typeof HandoffQuery>) {
       return db.transaction(
         async (tx) => {
-          const filter = and(
-            visible(principal),
-            input.status ? eq(handoffs.status, input.status) : undefined,
-            input.direction
-              ? eq(
-                  input.direction === 'sent'
-                    ? handoffs.senderOrganizationId
-                    : handoffs.receiverOrganizationId,
-                  principal.organizationId,
-                )
-              : undefined,
-          );
-          const [{ total }] = await tx.select({ total: count() }).from(handoffs).where(filter);
-          const rows = await tx
-            .select({ id: handoffs.id })
-            .from(handoffs)
-            .where(filter)
-            .orderBy(asc(handoffs.createdAt), asc(handoffs.id))
-            .limit(input.limit)
-            .offset((input.page - 1) * input.limit);
+          const { total, ids } = await queries.list(tx, principal, input);
           const items = [];
-          for (const row of rows) {
+          for (const id of ids) {
             const {
               versions: _versions,
               revisions: _revisions,
               receipts: _receipts,
               ...summary
-            } = await detail(tx, principal, row.id);
+            } = await detail(tx, principal, id);
             items.push(summary);
           }
           return { items, page: input.page, limit: input.limit, total };
@@ -264,15 +181,9 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
     },
     create(principal: Principal, input: z.infer<typeof CreateHandoff>) {
       return mutate(principal, input.requestId, 'created', input, async (tx) => {
-        const [sender] = await tx
-          .select({ humanApprovalRequired: organizations.humanApprovalRequired })
-          .from(organizations)
-          .where(eq(organizations.id, principal.organizationId));
+        const sender = await queries.senderApprovalPolicy(tx, principal.organizationId);
         if (!sender) throw new ApiError('UNAUTHORIZED_ACTION', 403);
-        const [receiver] = await tx
-          .select()
-          .from(organizations)
-          .where(eq(organizations.id, input.receiverOrganizationId));
+        const receiver = await queries.organization(tx, input.receiverOrganizationId);
         if (!receiver || receiver.id === principal.organizationId)
           throw new ApiError('INVALID_INPUT', 400);
         let workflowId = input.workflowId || randomUUID();
@@ -291,12 +202,8 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
           await tx.execute(
             sql`SELECT pg_advisory_xact_lock(hashtextextended(${'workflow:' + input.workflowId},0))`,
           );
-          const [existing] = await tx
-            .select({ id: handoffs.id })
-            .from(handoffs)
-            .where(eq(handoffs.workflowId, input.workflowId))
-            .limit(1);
-          if (existing) throw new ApiError('INVALID_INPUT', 400);
+          if (await queries.workflowExists(tx, input.workflowId))
+            throw new ApiError('INVALID_INPUT', 400);
         }
         const [row] = await tx
           .insert(handoffs)
@@ -392,11 +299,9 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
             throw new ApiError('REQUEST_CONFLICT', 409);
           if (hash(input.terms) === (await version(tx, id, input.version)).termsSha256)
             throw new ApiError('INVALID_INPUT', 400);
-          const [latest] = await tx
-            .select({ version: sql<number>`max(${handoffVersions.version})` })
-            .from(handoffVersions)
-            .where(eq(handoffVersions.handoffId, id));
-          const proposedVersion = latest.version + 1,
+          const latest = await queries.latestVersion(tx, id);
+          if (latest === undefined) throw Error('Missing handoff version');
+          const proposedVersion = latest + 1,
             revisionId = randomUUID();
           await insertVersion(tx, id, proposedVersion, input.terms, principal);
           await tx.insert(handoffRevisions).values({
@@ -434,10 +339,7 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
         async (tx) => {
           const row = await owned(tx, principal, id, true);
           requireSender(principal, row, true);
-          const [revision] = await tx
-            .select()
-            .from(handoffRevisions)
-            .where(and(eq(handoffRevisions.id, revisionId), eq(handoffRevisions.handoffId, id)));
+          const revision = await queries.revision(tx, id, revisionId);
           if (!revision) throw new ApiError('NOT_FOUND', 404);
           if (
             row.status !== 'awaiting_approval' ||
@@ -523,18 +425,9 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
         throw new ApiError('UNAUTHORIZED_ACTION', 403);
       return db.transaction(
         async (tx) => {
-          const rows = await tx
-            .select({ id: handoffs.id })
-            .from(handoffs)
-            .where(
-              and(
-                eq(handoffs.senderOrganizationId, principal.organizationId),
-                inArray(handoffs.status, ['draft', 'awaiting_approval']),
-              ),
-            )
-            .orderBy(asc(handoffs.createdAt));
+          const ids = await queries.pendingIds(tx, principal.organizationId);
           const items = [];
-          for (const row of rows) items.push(await detail(tx, principal, row.id));
+          for (const handoffId of ids) items.push(await detail(tx, principal, handoffId));
           return { items };
         },
         { isolationLevel: 'repeatable read', accessMode: 'read only' },
@@ -543,29 +436,17 @@ export function platformStore(client: SQL, signing: ReturnType<typeof signer>) {
     async workflow(principal: Principal, id: string) {
       return db.transaction(
         async (tx) => {
-          const rows = await tx
-            .select({ id: handoffs.id })
-            .from(handoffs)
-            .where(and(eq(handoffs.workflowId, id), visible(principal)))
-            .orderBy(asc(handoffs.createdAt), asc(handoffs.id));
-          if (!rows.length) throw new ApiError('NOT_FOUND', 404);
+          const ids = await queries.workflowIds(tx, principal, id);
+          if (!ids.length) throw new ApiError('NOT_FOUND', 404);
           const items = [];
-          for (const row of rows) items.push(await detail(tx, principal, row.id));
+          for (const handoffId of ids) items.push(await detail(tx, principal, handoffId));
           return { items };
         },
         { isolationLevel: 'repeatable read', accessMode: 'read only' },
       );
     },
     async reconcile(principal: Principal, requestId: string) {
-      const [receipt] = await db
-        .select()
-        .from(handoffReceipts)
-        .where(
-          and(
-            eq(handoffReceipts.principalId, principal.id),
-            eq(handoffReceipts.requestId, requestId),
-          ),
-        );
+      const receipt = await queries.receiptByRequest(db, principal.id, requestId);
       if (!receipt) throw new ApiError('NOT_FOUND', 404);
       return {
         handoff: await api.get(principal, receipt.handoffId),

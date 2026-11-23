@@ -8,7 +8,7 @@ import { createHandoffClient, HandoffWriteUnknown } from '@porden/sdk';
 import { loadPlatformConfig } from '../src/platform-config';
 import { platformAuth } from '../src/platform-auth';
 import { createPlatformApp } from '../src/platform-app';
-import { platformStore } from '../src/db/platform-store';
+import { handoffService } from '../src/services/handoffs';
 import { migratePlatform } from '../src/db/platform-migrate';
 import { provisionPlatform } from '../src/db/platform-provision';
 import { signer, hash, verifyToken } from '../src/security';
@@ -178,7 +178,7 @@ beforeAll(async () => {
     ],
   });
   const signing = signer(config),
-    store = platformStore(database, signing);
+    store = handoffService(database, signing);
   await store.ready();
   app = createPlatformApp(config, store, platformAuth(database, config), signing);
   agentA = client(tokenA);

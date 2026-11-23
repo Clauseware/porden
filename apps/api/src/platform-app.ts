@@ -22,7 +22,7 @@ import { ApiError } from './application/errors';
 import { errorResponse, notFoundResponse } from './http/error-handler';
 import { logRequest } from './observability/logger';
 import type { PlatformConfig } from './platform-config';
-import type { platformStore } from './db/platform-store';
+import type { handoffService } from './services/handoffs';
 import type { platformAuth } from './platform-auth';
 
 const json = <T extends z.ZodType>(schema: T) => validator('json', (value) => schema.parse(value));
@@ -32,7 +32,7 @@ const query = <T extends z.ZodType>(schema: T) =>
   validator('query', (value) => schema.parse(value));
 export function createPlatformApp(
   config: PlatformConfig,
-  db: ReturnType<typeof platformStore>,
+  db: ReturnType<typeof handoffService>,
   auth: ReturnType<typeof platformAuth>,
   signing: ReturnType<typeof signer>,
 ) {
