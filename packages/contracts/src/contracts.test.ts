@@ -1,3 +1,4 @@
+
 import { expect, test } from 'bun:test';
 import { ActionArguments, DamageData, Fields, Origin, canonicalize } from './index';
 test('case data is strict and optional address is omitted without fabrication', () => {

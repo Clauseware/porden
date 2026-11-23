@@ -43,8 +43,19 @@ export const VerifiedReceipt = z.strictObject({
 export const Draft = CreateDraft.extend({id: z.uuid(), status: TransferStatus,
   approvedFields: z.array(Field), receipt: VerifiedReceipt.nullable(), createdAt: z.iso.datetime()});
 export const Approval = z.strictObject({arguments: ActionArguments, expiresAt: z.iso.datetime()});
+export const TransferReview = CreateDraft;
+export type TransferReview = z.infer<typeof TransferReview>;
 export const ReceiptSubmission = z.strictObject({receipt: z.string().max(16384), requestId: z.string().min(1).max(500)});
+export type ReceiptSubmission = z.infer<typeof ReceiptSubmission>;
 export const OutcomeUpdate = z.strictObject({status: z.enum(['cancelled', 'unknown'])});
+export const SignIn = z.strictObject({password: z.string().min(1).max(256)});
+export const PublicConfig = z.strictObject({openrouterConfigured: z.boolean(), openrouterModel: z.string(), recipientOrigin: Origin});
+export const ReceivedCase = CaseResponse.extend({data: DamageData, receivedAt: z.iso.datetime(), status: z.literal('accepted')});
+export type CreateDraft = z.infer<typeof CreateDraft>;
+export type ApproveTransfer = z.infer<typeof ApproveTransfer>;
+export type CreateCase = z.infer<typeof CreateCase>;
+export type ReceivedCase = z.infer<typeof ReceivedCase>;
+export type PublicConfig = z.infer<typeof PublicConfig>;
 export type DamageData = z.infer<typeof DamageData>;
 export type Draft = z.infer<typeof Draft>;
 export type ActionArguments = z.infer<typeof ActionArguments>;
@@ -52,14 +63,47 @@ export type ReceiptClaims = z.infer<typeof ReceiptClaims>;
 export type ApprovalClaims = z.infer<typeof ApprovalClaims>;
 export type VerifiedReceipt = z.infer<typeof VerifiedReceipt>;
 export type TransferStatus = z.infer<typeof TransferStatus>;
-export type TransferOutcome =
-  | {status: 'accepted'; transferId: string; receipt: VerifiedReceipt}
-  | {status: 'rejected' | 'unknown'; transferId: string; reasonCode: string}
-  | {status: 'cancelled'; transferId: string};
+export const TransferOutcome = z.discriminatedUnion('status', [
+  z.strictObject({status: z.literal('accepted'), transferId: z.uuid(), receipt: VerifiedReceipt}),
+  z.strictObject({status: z.literal('rejected'), transferId: z.uuid(), reasonCode: z.string()}),
+  z.strictObject({status: z.literal('unknown'), transferId: z.uuid(), reasonCode: z.string()}),
+  z.strictObject({status: z.literal('cancelled'), transferId: z.uuid()}),
+]);
+export type TransferOutcome = z.infer<typeof TransferOutcome>;
 export type EventName = 'draft_created' | 'recipient_discovered' | 'consent_required' | 'consent_approved' |
   'delegating' | 'receiver_confirmation_required' | 'submitted' | 'receipt_verified' | 'rejected' | 'cancelled' | 'outcome_unknown';
 export type PordenEvent = {type: EventName; transferId: string};
 export const Session = z.strictObject({customerId: z.literal('demo-user'), csrf: z.string().min(1)});
+export const ErrorResponse = z.object({error:z.object({code:z.string().min(1),message:z.string().optional(),requestId:z.uuid().optional()})});
+export type ErrorResponse = z.infer<typeof ErrorResponse>;
+export const errorMessages: Record<string,string> = {
+  INVALID_INPUT:'Check the supplied details and try again.', INVALID_RESPONSE:'The service returned an invalid response. Check the transfer before trying again.',
+  NETWORK_ERROR:'Could not reach the service. Check your connection and the existing transfer before trying again.',
+  UNAUTHORIZED_ACTION:'Sign in again before continuing.', ORIGIN_NOT_ALLOWED:'This site is not allowed to make that request.',
+  CSRF_MISMATCH:'Your session has changed. Sign in again before continuing.', REQUEST_CONFLICT:'This transfer has already changed. Check its current status.',
+  CONSENT_REQUIRED:'Sharing approval is required or has expired. Review a new transfer.',
+  CONSENT_SCOPE_MISMATCH:'The proposed details differ from your approval. The transfer was stopped.',
+  RECIPIENT_NOT_ALLOWED:'This recipient is not allowed.', NOT_FOUND:'The requested record was not found.',
+  PAYLOAD_TOO_LARGE:'The request is too large. Shorten the case details.', NOT_READY:'The service is not ready. Try again later.',
+  DATABASE_UNAVAILABLE:'Case storage is unavailable. Check the transfer before trying again.',
+  PROVIDER_NOT_CONFIGURED:'The AI service is not configured. Contact the demo operator.',
+  PROVIDER_CONNECTION_FAILED:'The server could not connect to the AI provider. Contact the demo operator.',
+  PROVIDER_AUTHENTICATION_FAILED:'The AI provider rejected the server credentials. Contact the demo operator.',
+  PROVIDER_CREDITS_EXHAUSTED:'The AI provider account needs attention. Contact the demo operator.',
+  PROVIDER_MODEL_UNAVAILABLE:'The configured AI model is unavailable. Contact the demo operator.',
+  PROVIDER_REQUEST_REJECTED:'The AI provider rejected this request. Contact the demo operator.',
+  PROVIDER_RATE_LIMITED:'The AI provider is busy. Try again later; do not resubmit an uncertain transfer.',
+  PROVIDER_TIMEOUT:'The AI provider timed out. Check the existing transfer before trying again.',
+  PROVIDER_UNAVAILABLE:'The AI provider is unavailable. Try again later.',
+  RECIPIENT_UNAVAILABLE:'The courier could not be reached. Check the receipt again later; no new case was submitted.',
+  SIGNATURE_INVALID:'The signed approval or receipt could not be verified.', RECEIPT_INVALID:'The courier receipt does not match this transfer.',
+  MODEL_REQUIRED:'The demo needs an AI model configured before sharing.', CONFIG_UNAVAILABLE:'The service configuration is unavailable. Reload the page later.',
+  INVALID_PROPOSAL:'The courier did not return a valid proposal. No case was confirmed.',
+  DELEGATION_FAILED:'The courier handoff could not be completed. No case was confirmed.',
+  HANDOFF_FAILED:'The handoff could not be completed. Check the existing transfer before trying again.',
+  INTERNAL_ERROR:'The service could not complete the request. Check the transfer before trying again.',
+  HTTP_ERROR:'The service could not complete the request. Check the transfer before trying again.',
+};
 
 // All protocol payloads are JSON values; sorting keys makes hashes independent of property order.
 export function canonicalize(value: unknown): string {
