@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "react-hooks", "nextjs"],
+  "categories": { "correctness": "error" },
+  "ignorePatterns": ["**/.next/**", "**/node_modules/**", "**/drizzle/**", "**/next-env.d.ts"],
+  "rules": {
+    "no-debugger": "error",
+    "no-unused-vars": "error",
+    "typescript/no-explicit-any": "error",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "error"
+  }
+}
