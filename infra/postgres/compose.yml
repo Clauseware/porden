@@ -1,0 +1,19 @@
+name: porden
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: porden_admin
+      POSTGRES_PASSWORD: local-admin-only
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - porden-postgres:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/0001-organizations.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U porden_admin"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  porden-postgres:

@@ -1,0 +1,10 @@
+CREATE ROLE porden_merchant LOGIN PASSWORD 'local-merchant-only';
+CREATE ROLE porden_courier LOGIN PASSWORD 'local-courier-only';
+CREATE DATABASE porden_merchant OWNER porden_merchant;
+CREATE DATABASE porden_courier OWNER porden_courier;
+REVOKE CONNECT ON DATABASE porden_merchant FROM PUBLIC;
+REVOKE CONNECT ON DATABASE porden_courier FROM PUBLIC;
+GRANT CONNECT ON DATABASE porden_merchant TO porden_merchant;
+GRANT CONNECT ON DATABASE porden_courier TO porden_courier;
+CREATE DATABASE porden_test OWNER porden_admin;
+REVOKE CONNECT ON DATABASE porden_test FROM PUBLIC;
