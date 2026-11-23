@@ -12,6 +12,15 @@ Applies to the entire repository. More specific instructions may be added only w
 - Never silently swallow errors or invent successful outcomes.
 - Do not stage, commit, deploy, or make destructive changes without explicit authorization.
 
+## Repository map and implemented patterns
+
+- This is a Bun workspace: `apps/` contains the API and Next.js apps; `packages/contracts` owns shared Zod contracts; `packages/sdk` owns the typed client.
+- Keep shared handoff request/response schemas in `packages/contracts/src/handoffs.ts`. Infer TypeScript types from those schemas and use the same contracts in routes and the SDK.
+- Handoffs are versioned. Keep each version's terms and optional context immutable; revisions create a new version. Store approvals as structured records tied to a handoff, version, and scope, never as trusted prose.
+- Keep receiver acceptance distinct from human approval. Calculate authorization and execution eligibility on the server from persisted state, current version, scope, and required acceptances.
+- The SDK reports uncertain write outcomes explicitly. Do not retry uncertain writes automatically; use read methods to reconcile their outcome.
+- Add database changes through new migrations. Do not rewrite migrations that may already have been applied.
+
 ## TypeScript
 
 - Do not use `any` or type assertions (`as`) to bypass type checking; prefer inference, narrowing, and correcting the source type.
