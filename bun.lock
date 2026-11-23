@@ -36,6 +36,17 @@
         "react-dom": "19.2.8",
       },
     },
+    "apps/dashboard-web": {
+      "name": "@porden/dashboard-web",
+      "version": "0.1.0",
+      "dependencies": {
+        "@porden/contracts": "workspace:*",
+        "@porden/sdk": "workspace:*",
+        "next": "16.4.6",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+      },
+    },
     "apps/merchant-web": {
       "name": "@porden/merchant-web",
       "version": "0.1.0",
@@ -276,6 +287,8 @@
     "@porden/contracts": ["@porden/contracts@workspace:packages/contracts"],
 
     "@porden/courier-web": ["@porden/courier-web@workspace:apps/courier-web"],
+
+    "@porden/dashboard-web": ["@porden/dashboard-web@workspace:apps/dashboard-web"],
 
     "@porden/merchant-web": ["@porden/merchant-web@workspace:apps/merchant-web"],
 

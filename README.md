@@ -1,5 +1,7 @@
 # Porden
 
+The versioned task platform, organization access, human revision approvals, central dashboard and bidirectional demo consumers are implemented alongside the original delivery integration. See [PLATFORM.md](PLATFORM.md) for local setup, account locations, API/SDK contracts, the $500-to-$550 demo and verification commands.
+
 Bun workspace implementation of [the Porden plan](notes/porden-planning/README.md): independent Hono APIs backed by PostgreSQL through Drizzle ORM, browser TypeScript SDK, shared Zod contracts, and two Next.js demo applications. The merchant consent flow, progress, cancellation/refusal, unknown-outcome recovery and courier receipt view follow the Forest & Paper direction in `brand.md` and `design.md`.
 
 The protected Node/SQLite reference remains in `server.mjs`, `config.mjs`, `public/`, and `tests/`. Run it with `bun run start:baseline`. Its evidence does not establish that the replacement stack works end to end.
