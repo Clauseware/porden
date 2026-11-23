@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "human_approval_required" boolean DEFAULT true NOT NULL;

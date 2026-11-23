@@ -1,0 +1,3 @@
+ALTER TABLE "handoffs" DROP CONSTRAINT "handoff_version";--> statement-breakpoint
+ALTER TABLE "handoffs" ADD CONSTRAINT "handoff_version" CHECK ("handoffs"."current_version" > 0 AND ("handoffs"."approved_version" IS NULL OR "handoffs"."approved_version" = "handoffs"."current_version") AND ("handoffs"."accepted_version" IS NULL OR ("handoffs"."approved_version" IS NOT NULL AND "handoffs"."accepted_version" = "handoffs"."approved_version")));--> statement-breakpoint
+ALTER TABLE "principals" ADD CONSTRAINT "principal_approver_kind" CHECK ("principals"."kind" = 'human' OR "principals"."role" = 'member');
