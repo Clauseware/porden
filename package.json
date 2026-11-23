@@ -1,0 +1,41 @@
+{
+  "name": "porden",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.4.3",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "bun apps/api/src/index.ts",
+    "start:baseline": "node server.mjs",
+    "dev:merchant": "bun run --cwd apps/merchant-web dev",
+    "dev:courier": "bun run --cwd apps/courier-web dev",
+    "db:migrate": "bun apps/api/src/db/migrate.ts",
+    "dev:api:merchant": "bun --env-file=.env --env-file=apps/api/.env.merchant apps/api/src/index.ts",
+    "dev:api:courier": "bun --env-file=.env --env-file=apps/api/.env.courier apps/api/src/index.ts",
+    "db:migrate:merchant": "bun --env-file=.env --env-file=apps/api/.env.merchant apps/api/src/db/migrate.ts",
+    "db:migrate:courier": "bun --env-file=.env --env-file=apps/api/.env.courier apps/api/src/db/migrate.ts",
+    "keys:generate": "bun scripts/generate-keys.ts",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "bun test packages apps/api/test/unit.test.ts",
+    "test:api": "bun test apps/api/test/postgres.test.ts",
+    "build:merchant": "bun run --cwd apps/merchant-web build",
+    "build:courier": "bun run --cwd apps/courier-web build",
+    "test": "python -m pytest tests/test_api.py -q",
+    "test:config": "node --test tests/test_openrouter.mjs tests/test_proposal_format.mjs",
+    "test:live": "node --test tests/test_live_handoff.mjs",
+    "test:browser": "node --test tests/test_runtime.mjs"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
