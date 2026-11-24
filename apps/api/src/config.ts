@@ -52,6 +52,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error('Invalid platform integration configuration');
   return {
     role,
+    host: env.HOST || '127.0.0.1',
     platform,
     origin,
     peerOrigin,

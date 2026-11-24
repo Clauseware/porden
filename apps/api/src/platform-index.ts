@@ -15,8 +15,8 @@ async function main() {
     const db = handoffService(client, signing);
     await db.ready();
     const app = createPlatformApp(config, db, platformAuth(client, config), signing);
-    const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch });
-    console.log(`Porden platform API on http://127.0.0.1:${server.port}`);
+    const server = Bun.serve({ hostname: config.host, port: config.port, fetch: app.fetch });
+    console.log(`Porden platform API on http://${config.host}:${server.port}`);
     const database = client;
     for (const signal of ['SIGINT', 'SIGTERM'] as const)
       process.on(signal, () => {

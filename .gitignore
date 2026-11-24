@@ -10,5 +10,7 @@ node_modules/
 *.tsbuildinfo
 .env
 .env.*
+infra/standalone/secrets/
+infra/standalone/backups/
 !.env.example
 !.env.*.example

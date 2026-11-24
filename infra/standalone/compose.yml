@@ -1,0 +1,157 @@
+name: porden
+
+x-api: &api
+  image: ${PORDEN_API_IMAGE:-porden-api:release-candidate}
+  build:
+    context: ../..
+    dockerfile: apps/api/Dockerfile
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 30s
+  depends_on:
+    postgres:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    ports:
+      - '${PORDEN_LISTEN_IP:-0.0.0.0}:${PORDEN_HTTP_PORT:-80}:80'
+      - '${PORDEN_LISTEN_IP:-0.0.0.0}:${PORDEN_HTTPS_PORT:-443}:443'
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact email}
+      CADDY_TLS_ISSUER: ${CADDY_TLS_ISSUER:-acme}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:?Set the platform API hostname}
+      MERCHANT_DOMAIN: ${MERCHANT_DOMAIN:?Set the merchant hostname}
+      COURIER_DOMAIN: ${COURIER_DOMAIN:?Set the courier hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        aliases:
+          - ${PLATFORM_DOMAIN}
+          - ${MERCHANT_DOMAIN}
+          - ${COURIER_DOMAIN}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:2019/config/']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *logging
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the database administrator password}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PORDEN_PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?Set the platform database password}
+      PORDEN_MERCHANT_DB_PASSWORD: ${MERCHANT_DB_PASSWORD:?Set the merchant database password}
+      PORDEN_COURIER_DB_PASSWORD: ${COURIER_DB_PASSWORD:?Set the courier database password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./bootstrap-postgres.sql:/docker-entrypoint-initdb.d/001-porden.sql:ro
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  platform:
+    <<: *api
+    command: [platform]
+    environment:
+      PORDEN_HOST: 0.0.0.0
+      PORDEN_PORT: '5300'
+      PORDEN_DATABASE_URL: postgres://porden_platform:${PLATFORM_DB_PASSWORD}@postgres:5432/porden_platform?sslmode=disable
+      PORDEN_PUBLIC_ORIGIN: https://${PLATFORM_DOMAIN}
+      PORDEN_ALLOWED_ORIGINS: https://${PLATFORM_DOMAIN},https://${MERCHANT_DOMAIN},https://${COURIER_DOMAIN},${DASHBOARD_PUBLIC_ORIGIN:-https://${PLATFORM_DOMAIN}}
+      PORDEN_SESSION_SECRET: ${PLATFORM_SESSION_SECRET:?Set the platform session secret}
+      PORDEN_SIGNING_KEY_PATH: /run/secrets/signing_key
+      PORDEN_SIGNING_KEY_ID: ${PLATFORM_SIGNING_KEY_ID:-porden-platform-v1}
+      PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
+    secrets:
+      - source: platform_signing_key
+        target: signing_key
+
+  merchant:
+    <<: *api
+    command: [merchant]
+    environment:
+      ORGANIZATION_ROLE: merchant
+      HOST: 0.0.0.0
+      PORT: '5100'
+      PUBLIC_ORIGIN: https://${MERCHANT_DOMAIN}
+      PEER_ORIGIN: https://${COURIER_DOMAIN}
+      DATABASE_URL: postgres://porden_merchant:${MERCHANT_DB_PASSWORD}@postgres:5432/porden_merchant?sslmode=disable
+      SESSION_SECRET: ${MERCHANT_SESSION_SECRET:?Set the merchant session secret}
+      PARTNER_SECRET: ${PARTNER_SECRET:?Set the shared reconciliation secret}
+      DEMO_PASSWORD: ${MERCHANT_DEMO_PASSWORD:?Set the merchant mock password}
+      SIGNING_KEY_PATH: /run/secrets/signing_key
+      SIGNING_KEY_ID: ${MERCHANT_SIGNING_KEY_ID:-porden-merchant-v1}
+      PORDEN_API_ORIGIN: https://${PLATFORM_DOMAIN}
+      PORDEN_INTEGRATION_TOKEN: ${MERCHANT_INTEGRATION_TOKEN:?Set the provisioned merchant integration token}
+      PORDEN_ORGANIZATION_ID: ${MERCHANT_ORGANIZATION_ID:?Set the merchant organization UUID}
+      PORDEN_PEER_ORGANIZATION_ID: ${COURIER_ORGANIZATION_ID:?Set the courier organization UUID}
+      PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+    secrets:
+      - source: merchant_signing_key
+        target: signing_key
+
+  courier:
+    <<: *api
+    command: [courier]
+    environment:
+      ORGANIZATION_ROLE: courier
+      HOST: 0.0.0.0
+      PORT: '5200'
+      PUBLIC_ORIGIN: https://${COURIER_DOMAIN}
+      PEER_ORIGIN: https://${MERCHANT_DOMAIN}
+      DATABASE_URL: postgres://porden_courier:${COURIER_DB_PASSWORD}@postgres:5432/porden_courier?sslmode=disable
+      SESSION_SECRET: ${COURIER_SESSION_SECRET:?Set the courier session secret}
+      PARTNER_SECRET: ${PARTNER_SECRET}
+      DEMO_PASSWORD: ${COURIER_DEMO_PASSWORD:?Set the courier mock password}
+      SIGNING_KEY_PATH: /run/secrets/signing_key
+      SIGNING_KEY_ID: ${COURIER_SIGNING_KEY_ID:-porden-courier-v1}
+      PORDEN_API_ORIGIN: https://${PLATFORM_DOMAIN}
+      PORDEN_INTEGRATION_TOKEN: ${COURIER_INTEGRATION_TOKEN:?Set the provisioned courier integration token}
+      PORDEN_ORGANIZATION_ID: ${COURIER_ORGANIZATION_ID}
+      PORDEN_PEER_ORGANIZATION_ID: ${MERCHANT_ORGANIZATION_ID}
+      PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
+    secrets:
+      - source: courier_signing_key
+        target: signing_key
+
+secrets:
+  platform_signing_key:
+    file: ${PLATFORM_SIGNING_KEY_FILE:-./secrets/platform.pem}
+  merchant_signing_key:
+    file: ${MERCHANT_SIGNING_KEY_FILE:-./secrets/merchant.pem}
+  courier_signing_key:
+    file: ${COURIER_SIGNING_KEY_FILE:-./secrets/courier.pem}
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

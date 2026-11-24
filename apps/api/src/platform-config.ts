@@ -15,6 +15,7 @@ export const PlatformEnvironment = z.object({
   PORDEN_SIGNING_KEY_PATH: z.string().min(1),
   PORDEN_SIGNING_KEY_ID: z.string().min(1).default('porden-platform-v1'),
   PORDEN_PORT: z.coerce.number().int().min(1).max(65535).default(5300),
+  PORDEN_HOST: z.string().min(1).default('127.0.0.1'),
 });
 export function loadPlatformConfig(env: Record<string, string | undefined> = process.env) {
   const parsed = PlatformEnvironment.safeParse(env);
@@ -37,6 +38,7 @@ export function loadPlatformConfig(env: Record<string, string | undefined> = pro
     keyPath: resolve(value.PORDEN_SIGNING_KEY_PATH),
     keyId: value.PORDEN_SIGNING_KEY_ID,
     port: value.PORDEN_PORT,
+    host: value.PORDEN_HOST,
   };
 }
 export type PlatformConfig = ReturnType<typeof loadPlatformConfig>;

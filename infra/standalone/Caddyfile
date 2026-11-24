@@ -1,0 +1,28 @@
+{
+	email {$ACME_EMAIL}
+	cert_issuer {$CADDY_TLS_ISSUER:acme}
+}
+
+{$PLATFORM_DOMAIN} {
+	reverse_proxy platform:5300
+}
+
+{$MERCHANT_DOMAIN} {
+	@platform path /api/v2 /api/v2/*
+	handle @platform {
+		reverse_proxy platform:5300
+	}
+	handle {
+		reverse_proxy merchant:5100
+	}
+}
+
+{$COURIER_DOMAIN} {
+	@platform path /api/v2 /api/v2/*
+	handle @platform {
+		reverse_proxy platform:5300
+	}
+	handle {
+		reverse_proxy courier:5200
+	}
+}
