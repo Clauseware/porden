@@ -19,7 +19,7 @@
     "db:migrate:merchant": "bun --env-file=.env --env-file=apps/api/.env.merchant apps/api/src/db/migrate.ts",
     "db:migrate:courier": "bun --env-file=.env --env-file=apps/api/.env.courier apps/api/src/db/migrate.ts",
     "keys:generate": "bun scripts/generate-keys.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/porden",
     "test:unit": "bun test packages apps/api/test/unit.test.ts",
     "test:api": "bun test apps/api/test/postgres.test.ts",
     "build:merchant": "bun run --cwd apps/merchant-web build",
