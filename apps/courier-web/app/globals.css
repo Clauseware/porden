@@ -125,7 +125,9 @@ textarea {
   border-radius: 8px;
 }
 input[readonly] {
-  background: var(--surface-raised);
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted);
 }
 textarea {
   resize: vertical;
@@ -170,6 +172,7 @@ button:disabled {
   align-items: center;
   gap: 10px;
   font-weight: 500;
+  min-height: 44px;
 }
 .checkbox input {
   width: 18px;
@@ -250,8 +253,24 @@ dd {
 .result {
   margin-top: 24px;
 }
-.review {
+.review,
+.result[data-status='unknown'] {
   border-color: var(--lavender);
+}
+.result[data-status='rejected'],
+.result[data-status='cancelled'] {
+  border-color: var(--danger);
+}
+.result[data-status='rejected'] h2,
+.result[data-status='cancelled'] h2 {
+  color: var(--danger);
+}
+.panel > a {
+  display: inline-block;
+  padding: 12px 0;
+}
+.status:empty {
+  margin: 0;
 }
 .actions {
   display: flex;
