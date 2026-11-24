@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import PordenSymbol from '../../logo';
 import {
   createHandoffClient,
   getErrorMessage,
@@ -229,6 +230,7 @@ export default function Dashboard({ initialId }: { initialId?: string }) {
     <>
       <header>
         <Link className="brand" href="/">
+          <PordenSymbol />
           porden
         </Link>
         <span>Handoffs with accountable decisions</span>

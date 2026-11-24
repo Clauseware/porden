@@ -1,5 +1,6 @@
 import SignIn from './sign-in';
 import Link from 'next/link';
+import PordenSymbol from '../../logo';
 export default async function Page({
   searchParams,
 }: {
@@ -11,6 +12,7 @@ export default async function Page({
       <Link href="/tasks">Open Company B task integration</Link>
       <header className="topbar">
         <Link className="wordmark" href="/">
+          <PordenSymbol />
           porden<span> / courier</span>
         </Link>
         <span className="badge">Independent courier</span>

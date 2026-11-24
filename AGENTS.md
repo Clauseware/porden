@@ -50,7 +50,7 @@ Applies to the entire repository. More specific instructions may be added only w
 - Avoid unnecessary global state, custom hooks, wrappers, and component abstraction.
 - Keep state minimal and derive display values from existing state when possible.
 - Make loading, approval, cancellation, refusal, success, and error states explicit and accessible.
-- Follow Porden's Forest & Paper identity: Forest `#0F3D2E`, Sage `#4E7C66`, Paper `#F6F4EB`, Ink `#1F1F1F`.
+- Follow Porden's dark-only identity: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text). Use the tokens in `apps/brand.css` and the `PordenSymbol` logo in `apps/logo.tsx`; do not hard-code colours.
 - Prioritize usable, readable interfaces and the working end-to-end flow before polish.
 
 ## Testing and delivery
