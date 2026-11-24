@@ -16,6 +16,11 @@ import {
   RevisionDecision,
   FinishHandoff,
   AuthorizationQuery,
+  RequestClarification,
+  ResolveClarification,
+  VerifyAuthorization,
+  ReserveExecution,
+  SettleExecution,
 } from '@porden/contracts';
 import { equal, type signer } from './security';
 import { ApiError } from './application/errors';
@@ -83,8 +88,8 @@ export function createPlatformApp(
       exposeHeaders: ['X-Request-Id'],
     }),
   );
-  app.get('/healthz', (c) => c.json({ status: 'ok' }));
-  app.get('/readyz', async (c) => {
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+  app.get('/ready', async (c) => {
     await db.ready();
     return c.json({ status: 'ready' });
   });
@@ -204,6 +209,65 @@ export function createPlatformApp(
   );
   app.get('/api/v2/approvals', query(z.strictObject({})), async (c) =>
     c.json(await db.pending(c.get('principal'))),
+  );
+  app.post(
+    '/api/v2/handoffs/:id/authorization/verify',
+    params(HandoffParams),
+    json(VerifyAuthorization),
+    async (c) =>
+      c.json(
+        await db.verifyAuthorization(
+          c.get('principal'),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        ),
+      ),
+  );
+  app.post(
+    '/api/v2/handoffs/:id/clarifications',
+    params(HandoffParams),
+    json(RequestClarification),
+    async (c) =>
+      c.json(
+        await db.requestClarification(
+          c.get('principal'),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        ),
+        201,
+      ),
+  );
+  app.post(
+    '/api/v2/handoffs/:id/clarifications/resolve',
+    params(HandoffParams),
+    json(ResolveClarification),
+    async (c) =>
+      c.json(
+        await db.resolveClarification(
+          c.get('principal'),
+          c.req.valid('param').id,
+          c.req.valid('json'),
+        ),
+      ),
+  );
+  app.post(
+    '/api/v2/handoffs/:id/executions',
+    params(HandoffParams),
+    json(ReserveExecution),
+    async (c) =>
+      c.json(
+        await db.reserveExecution(c.get('principal'), c.req.valid('param').id, c.req.valid('json')),
+        201,
+      ),
+  );
+  app.post(
+    '/api/v2/handoffs/:id/executions/settle',
+    params(HandoffParams),
+    json(SettleExecution),
+    async (c) =>
+      c.json(
+        await db.settleExecution(c.get('principal'), c.req.valid('param').id, c.req.valid('json')),
+      ),
   );
   app.get('/api/v2/workflows/:id', params(HandoffParams), async (c) =>
     c.json(await db.workflow(c.get('principal'), c.req.valid('param').id)),

@@ -517,6 +517,74 @@ export default function TaskConsumer({ company }: { company: string }) {
               {selected.status === 'draft' && (
                 <p>Awaiting a sender-side human approver in the Porden dashboard.</p>
               )}
+              {selected.clarifications.map((item) => (
+                <section key={item.id}>
+                  <h4>{item.response ? 'Resolved clarification' : 'Blocking clarification'}</h4>
+                  <ul>
+                    {item.missingInformation.map((question, index) => (
+                      <li key={index}>{question}</li>
+                    ))}
+                  </ul>
+                  <p>{item.reason}</p>
+                  {item.response ? (
+                    <p>Sender response: {item.response}</p>
+                  ) : (
+                    !received &&
+                    ['draft', 'approved', 'accepted', 'awaiting_approval'].includes(
+                      selected.status,
+                    ) && (
+                      <form
+                        action={async (form) => {
+                          await perform((requestId) =>
+                            client.resolveClarification(selected.id, {
+                              requestId,
+                              version: selected.currentVersion,
+                              clarificationId: item.id,
+                              response: String(form.get('response')),
+                            }),
+                          );
+                        }}
+                      >
+                        <label>
+                          Clarification response
+                          <input name="response" required maxLength={4000} />
+                        </label>
+                        <button disabled={disabled}>Resolve clarification</button>
+                      </form>
+                    )
+                  )}
+                </section>
+              ))}
+              {received && ['draft', 'approved', 'accepted'].includes(selected.status) && (
+                <form
+                  action={async (form) => {
+                    await perform((requestId) =>
+                      client.requestClarification(selected.id, {
+                        requestId,
+                        version: selected.currentVersion,
+                        missingInformation: [String(form.get('missingInformation'))],
+                        reason: String(form.get('blockingReason')),
+                      }),
+                    );
+                  }}
+                >
+                  <h4>Request essential information</h4>
+                  <label>
+                    Missing information
+                    <input name="missingInformation" required maxLength={1000} />
+                  </label>
+                  <label>
+                    Why execution is blocked
+                    <input name="blockingReason" required maxLength={2000} />
+                  </label>
+                  <button disabled={disabled}>Request clarification</button>
+                </form>
+              )}
+              {selected.executions.some((item) => item.status === 'reserved') && (
+                <p role="status">
+                  An execution is unresolved. Reconcile its outcome before changing this handoff.
+                </p>
+              )}
               {selected.status === 'awaiting_approval' && (
                 <p>
                   The proposed version is blocked. This consumer polls Porden for the decision every
@@ -609,11 +677,48 @@ export default function TaskConsumer({ company }: { company: string }) {
                         version: selected.currentVersion,
                         status: outcome,
                         note: String(form.get('note')),
+                        criterionResults: (
+                          selected.versions.find((item) => item.version === selected.currentVersion)
+                            ?.terms.acceptanceCriteria ?? []
+                        ).map((_, criterionIndex) => ({
+                          criterionIndex,
+                          met: form.get(`criterion-${criterionIndex}`) === 'met',
+                          ...(form.get(`reason-${criterionIndex}`)
+                            ? { reason: String(form.get(`reason-${criterionIndex}`)) }
+                            : {}),
+                        })),
                       }),
                     );
                   }}
                 >
                   <h3>Report task outcome</h3>
+                  <p>Results are reported by the receiving agent.</p>
+                  {selected.versions
+                    .find((item) => item.version === selected.currentVersion)
+                    ?.terms.acceptanceCriteria.map((criterion, index) => (
+                      <fieldset key={index}>
+                        <legend>{criterion}</legend>
+                        <label>
+                          Criterion {index + 1} result
+                          <select
+                            name={`criterion-${index}`}
+                            aria-label={`Criterion ${index + 1} result`}
+                            required
+                            defaultValue=""
+                          >
+                            <option value="" disabled>
+                              Select a result
+                            </option>
+                            <option value="met">Met</option>
+                            <option value="unmet">Unmet</option>
+                          </select>
+                        </label>
+                        <label>
+                          Reason if unmet
+                          <input name={`reason-${index}`} maxLength={2000} />
+                        </label>
+                      </fieldset>
+                    ))}
                   <label>
                     Outcome
                     <select name="outcome" aria-label="Outcome">

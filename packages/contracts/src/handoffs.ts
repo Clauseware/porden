@@ -30,10 +30,15 @@ export const HandoffContext = z.strictObject({
   evidence: z.array(EvidenceReference).max(20).optional(),
 });
 export type HandoffContext = z.infer<typeof HandoffContext>;
+export const ExecutionScope = z.strictObject({
+  action: z.string().trim().min(1).max(200),
+  parametersSha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
 export const TaskTerms = z.strictObject({
   goal: z.string().trim().min(1).max(2000),
   constraints: z.array(z.string().trim().min(1).max(1000)).max(30),
   acceptanceCriteria: z.array(z.string().trim().min(1).max(1000)).min(1).max(30),
+  executionScopes: z.array(ExecutionScope).min(1).max(30).optional(),
   budget: z.strictObject({amountMinor: z.number().int().min(0).max(1_000_000_000_000), currency: z.string().regex(/^[A-Z]{3}$/)}).optional(),
   ...HandoffContext.shape,
 });
@@ -53,7 +58,45 @@ export const CreateHandoff = RequestKey.extend({
 export const VersionCommand = RequestKey.extend({version: z.number().int().positive()});
 export const ProposeRevision = VersionCommand.extend({terms: TaskTerms, reason: z.string().trim().min(1).max(2000)});
 export const RevisionDecision = VersionCommand.extend({decision: z.enum(['approved', 'rejected'])});
-export const FinishHandoff = VersionCommand.extend({status: z.enum(['completed', 'failed']), note: z.string().trim().min(1).max(2000)});
+export const CriterionResult = z.strictObject({
+  criterionIndex: z.number().int().min(0).max(29), met: z.boolean(),
+  reason: z.string().trim().min(1).max(2000).optional(),
+}).refine(value => value.met || Boolean(value.reason), 'Unmet criteria require a reason');
+export const FinishHandoff = VersionCommand.extend({
+  status: z.enum(['completed', 'failed']), note: z.string().trim().min(1).max(2000),
+  criterionResults: z.array(CriterionResult).min(1).max(30),
+});
+export const RequestClarification = VersionCommand.extend({
+  missingInformation: z.array(z.string().trim().min(1).max(1000)).min(1).max(30),
+  reason: z.string().trim().min(1).max(2000),
+});
+export const ResolveClarification = VersionCommand.extend({
+  clarificationId: z.uuid(), response: z.string().trim().min(1).max(4000),
+});
+export const VerifyAuthorization = ExecutionScope.extend({version: z.number().int().positive()});
+export const ReserveExecution = VerifyAuthorization.extend({ ...RequestKey.shape, operationReference: z.string().trim().min(1).max(500) });
+export const SettleExecution = VersionCommand.extend({
+  executionId: z.uuid(), outcome: z.enum(['completed', 'failed']),
+  resultReference: z.string().trim().min(1).max(2000),
+});
+export const Clarification = z.strictObject({
+  id: z.uuid(), version: z.number().int().positive(),
+  missingInformation: RequestClarification.shape.missingInformation,
+  reason: RequestClarification.shape.reason,
+  response: ResolveClarification.shape.response.optional(),
+});
+export const Execution = ExecutionScope.extend({
+  id: z.uuid(), version: z.number().int().positive(), principalId: z.uuid(),
+  operationReference: ReserveExecution.shape.operationReference,
+  status: z.enum(['reserved', 'completed', 'failed']), resultReference: z.string().optional(),
+});
+export const HandoffEvent = z.discriminatedUnion('type', [
+  z.strictObject({type: z.literal('clarification_requested'), clarification: Clarification}),
+  z.strictObject({type: z.literal('clarification_resolved'), clarificationId: z.uuid(), response: ResolveClarification.shape.response}),
+  z.strictObject({type: z.literal('execution_reserved'), execution: Execution}),
+  z.strictObject({type: z.literal('execution_settled'), executionId: z.uuid(), outcome: SettleExecution.shape.outcome, resultReference: SettleExecution.shape.resultReference}),
+  z.strictObject({type: z.literal('completion'), criterionResults: FinishHandoff.shape.criterionResults}),
+]);
 export const HandoffQuery = z.strictObject({
   status: HandoffStatus.optional(), direction: z.enum(['sent', 'received']).optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
@@ -79,6 +122,7 @@ export const HandoffReceiptClaims = z.strictObject({
   requestId: z.uuid(), action: z.string(), version: z.number().int().positive(),
   termsSha256: z.string().regex(/^[a-f0-9]{64}$/), occurredAt: z.iso.datetime(),
   note: z.string().optional(),
+  event: HandoffEvent.optional(),
 });
 export const HandoffReceipt = HandoffReceiptClaims.extend({signedReceipt: z.string().min(1)});
 export type HandoffReceiptClaims = z.infer<typeof HandoffReceiptClaims>;
@@ -91,13 +135,14 @@ export const HandoffSummary = z.strictObject({
 });
 export const HandoffDetail = HandoffSummary.extend({
   versions: z.array(HandoffVersion), revisions: z.array(HandoffRevision), receipts: z.array(HandoffReceipt),
+  clarifications: z.array(Clarification), executions: z.array(Execution),
 });
 export type HandoffDetail = z.infer<typeof HandoffDetail>;
 export const HandoffList = z.strictObject({items: z.array(HandoffSummary), page: z.number().int(), limit: z.number().int(), total: z.number().int()});
 export const HandoffMutation = z.strictObject({handoff: HandoffDetail, receipt: HandoffReceipt});
 export const HandoffAuthorization = z.strictObject({
   handoffId: z.uuid(), version: z.number().int(), eligible: z.boolean(),
-  status: HandoffStatus, reasonCode: z.enum(['AUTHORIZED', 'STALE_VERSION', 'AWAITING_APPROVAL', 'ACCEPTANCE_REQUIRED', 'TERMINAL_STATE']),
+  status: HandoffStatus, reasonCode: z.enum(['AUTHORIZED', 'STALE_VERSION', 'AWAITING_APPROVAL', 'ACCEPTANCE_REQUIRED', 'TERMINAL_STATE', 'CLARIFICATION_REQUIRED', 'SCOPE_MISMATCH', 'EXECUTION_RESERVED', 'EXECUTION_ALREADY_COMPLETED']),
   termsSha256: z.string(),
 });
 export const WorkflowHistory = z.strictObject({items: z.array(HandoffDetail)});

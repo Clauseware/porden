@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test';
-import { CreateHandoff, EvidenceReference, HandoffContext, TaskTerms } from './handoffs';
+import { CreateHandoff, EvidenceReference, FinishHandoff, HandoffContext, TaskTerms } from './handoffs';
 const terms={goal:'Purchase supplies',constraints:[],acceptanceCriteria:['Return receipt']};
+
+test('completion requires an explicit criterion report and reasons for unmet criteria',()=>{
+  const command={requestId:crypto.randomUUID(),version:1,status:'completed',note:'Agent-reported result'};
+  expect(FinishHandoff.safeParse(command).success).toBe(false);
+  expect(FinishHandoff.safeParse({...command,criterionResults:[{criterionIndex:0,met:false}]}).success).toBe(false);
+  expect(FinishHandoff.safeParse({...command,criterionResults:[{criterionIndex:0,met:true}]}).success).toBe(true);
+});
 test('task terms require explicit context and bound optional untrusted evidence',()=>{
   expect(TaskTerms.parse(terms)).toEqual(terms);
   expect(TaskTerms.safeParse({goal:'Incomplete'}).success).toBe(false);

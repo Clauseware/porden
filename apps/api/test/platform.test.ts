@@ -70,6 +70,20 @@ function client(token?: string) {
   });
 }
 const key = () => ({ requestId: crypto.randomUUID() });
+const scope = {
+  action: 'courier.create_case',
+  parametersSha256: hash({
+    caseType: 'delivery_damage',
+    data: { orderReference: 'DEMO-1042', damageDescription: 'Synthetic governed damage' },
+  }),
+};
+async function scopedHandoff() {
+  const created = await agentC.createHandoff({
+    receiverOrganizationId: orgB,
+    terms: { ...terms(), executionScopes: [scope] },
+  });
+  return (await agentB.acceptHandoff(created.handoff.id, { version: 1 })).handoff;
+}
 async function offered() {
   const created = await agentA.createHandoff({
     ...key(),
@@ -347,6 +361,7 @@ integration(
         ...key(),
         version: 1,
         status: 'completed',
+        criterionResults: [{ criterionIndex: 0, met: true }],
         note: 'Before receiver acceptance',
       }),
     ).rejects.toMatchObject({ status: 409 });
@@ -356,6 +371,7 @@ integration(
       ...key(),
       version: 1,
       status: 'completed',
+      criterionResults: [{ criterionIndex: 0, met: true }],
       note: 'Accepted work completed',
     });
     expect(completed.handoff.status).toBe('completed');
@@ -438,6 +454,7 @@ integration(
         ...key(),
         version: 2,
         status: 'completed',
+        criterionResults: [{ criterionIndex: 0, met: true }],
         note: 'Unauthorized',
       }),
     ).rejects.toMatchObject({ status: 409 });
@@ -465,6 +482,7 @@ integration(
       ...key(),
       version: 2,
       status: 'completed',
+      criterionResults: [{ criterionIndex: 0, met: true }],
       note: 'Supplies purchased under updated budget',
     });
     expect(done.handoff.status).toBe('completed');
@@ -520,6 +538,7 @@ integration(
       ...key(),
       version: 1,
       status: 'completed',
+      criterionResults: [{ criterionIndex: 0, met: true }],
       note: 'Original work finished',
     });
     const returnTerms = {
@@ -580,6 +599,7 @@ integration('cancellation, refusal and failure are explicit terminal states', as
       ...key(),
       version: 1,
       status: 'completed',
+      criterionResults: [{ criterionIndex: 0, met: true }],
       note: 'Too late',
     }),
   ).rejects.toMatchObject({ status: 409 });
@@ -590,6 +610,7 @@ integration('cancellation, refusal and failure are explicit terminal states', as
         ...key(),
         version: 1,
         status: 'failed',
+        criterionResults: [{ criterionIndex: 0, met: false, reason: 'Supplier unavailable' }],
         note: 'Supplier unavailable',
       })
     ).handoff.status,
@@ -702,6 +723,185 @@ integration(
     expect((await agentA.getHandoff(draft.id)).acceptedVersion).toBeNull();
   },
 );
+integration(
+  'blocking clarifications are signed, visible, versioned and resolved only by the sender',
+  async () => {
+    const state = await scopedHandoff();
+    const request = {
+      version: 1,
+      missingInformation: ['Which depot receives the parcel?'],
+      reason: 'Cannot route the parcel without a depot',
+    };
+    const result = await agentB.requestClarification(state.id, request);
+    const clarification = result.handoff.clarifications[0];
+    expect((await agentB.verifyAuthorization(state.id, { ...scope, version: 1 })).reasonCode).toBe(
+      'CLARIFICATION_REQUIRED',
+    );
+    await expect(
+      agentB.reserveExecution(state.id, { ...scope, version: 1, operationReference: 'blocked' }),
+    ).rejects.toMatchObject({ code: 'CLARIFICATION_REQUIRED' });
+    await expect(
+      agentB.resolveClarification(state.id, {
+        version: 1,
+        clarificationId: clarification.id,
+        response: 'Forged sender answer',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(agentA.getHandoff(state.id)).rejects.toMatchObject({ status: 404 });
+    await expect(
+      agentC.resolveClarification(state.id, {
+        version: 2,
+        clarificationId: clarification.id,
+        response: 'Wrong version',
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    const resolved = await agentC.resolveClarification(state.id, {
+      version: 1,
+      clarificationId: clarification.id,
+      response: 'Use the north depot. Terms remain unchanged.',
+    });
+    expect(resolved.handoff.clarifications[0].response).toContain('north depot');
+    expect(resolved.handoff.versions).toEqual(state.versions);
+    expect((await agentB.verifyAuthorization(state.id, { ...scope, version: 1 })).eligible).toBe(
+      true,
+    );
+    const verified = await agentB.verifyReceipt(result.receipt.signedReceipt);
+    expect(verified.event).toEqual(result.receipt.event);
+  },
+);
+
+integration(
+  'action-scoped execution reservations prevent concurrent revisions and reconcile without another claim',
+  async () => {
+    const state = await scopedHandoff();
+    await expect(
+      agentC.verifyAuthorization(state.id, { ...scope, version: 1 }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      agentA.verifyAuthorization(state.id, { ...scope, version: 1 }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      (
+        await agentB.verifyAuthorization(state.id, {
+          ...scope,
+          parametersSha256: 'f'.repeat(64),
+          version: 1,
+        })
+      ).reasonCode,
+    ).toBe('SCOPE_MISMATCH');
+    await expect(
+      agentB.reserveExecution(state.id, {
+        ...scope,
+        parametersSha256: 'f'.repeat(64),
+        version: 1,
+        operationReference: 'wrong-parameters',
+      }),
+    ).rejects.toMatchObject({ code: 'SCOPE_MISMATCH' });
+    const input = { ...key(), ...scope, version: 1, operationReference: 'courier-case:one' };
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => agentB.reserveExecution(state.id, input)),
+    );
+    expect(new Set(results.map((item) => item.receipt.receiptId)).size).toBe(1);
+    const execution = results[0].handoff.executions[0];
+    expect(execution.status).toBe('reserved');
+    await expect(agentC.cancelHandoff(state.id, { version: 1 })).rejects.toMatchObject({
+      code: 'EXECUTION_RESERVED',
+    });
+    await expect(
+      agentB.proposeRevision(state.id, {
+        version: 1,
+        terms: { ...terms(), goal: 'Changed execution' },
+        reason: 'Race',
+      }),
+    ).rejects.toMatchObject({ code: 'EXECUTION_RESERVED' });
+    await expect(
+      agentB.requestClarification(state.id, {
+        version: 1,
+        missingInformation: ['Late question'],
+        reason: 'Race',
+      }),
+    ).rejects.toMatchObject({ code: 'EXECUTION_RESERVED' });
+    expect((await agentB.reconcileOperation(input.requestId)).receipt).toEqual(results[0].receipt);
+    const settled = await agentB.settleExecution(state.id, {
+      version: 1,
+      executionId: execution.id,
+      outcome: 'completed',
+      resultReference: 'COU-VERIFIED',
+    });
+    expect(settled.handoff.executions[0].status).toBe('completed');
+    await expect(agentB.reserveExecution(state.id, { ...input, ...key() })).rejects.toMatchObject({
+      code: 'EXECUTION_ALREADY_COMPLETED',
+    });
+    expect((await agentB.getHandoff(state.id)).executions).toHaveLength(1);
+  },
+);
+
+integration('concurrent revision and execution have exactly one winner', async () => {
+  const state = await scopedHandoff();
+  const results = await Promise.allSettled([
+    agentB.reserveExecution(state.id, { ...scope, version: 1, operationReference: 'race' }),
+    agentB.proposeRevision(state.id, {
+      version: 1,
+      terms: { ...terms(), goal: 'Revised task' },
+      reason: 'Concurrent revision',
+    }),
+  ]);
+  expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+  const persisted = await agentB.getHandoff(state.id);
+  expect(
+    persisted.executions.filter((item) => item.status === 'reserved').length +
+      Number(persisted.pendingRevisionId !== null),
+  ).toBe(1);
+});
+
+integration(
+  'criterion completion rejects missing, duplicate, unknown and unmet successful reports',
+  async () => {
+    const created = await agentC.createHandoff({
+      receiverOrganizationId: orgB,
+      terms: { ...terms(), acceptanceCriteria: ['Inspect parcel', 'Record report'] },
+    });
+    const state = (await agentB.acceptHandoff(created.handoff.id, { version: 1 })).handoff;
+    const base = { version: 1, status: 'completed', note: 'Agent-reported inspection' };
+    const reports = [
+      [{ criterionIndex: 0, met: true }],
+      [
+        { criterionIndex: 0, met: true },
+        { criterionIndex: 0, met: true },
+      ],
+      [
+        { criterionIndex: 0, met: true },
+        { criterionIndex: 2, met: true },
+      ],
+      [
+        { criterionIndex: 0, met: true },
+        { criterionIndex: 1, met: false, reason: 'No report' },
+      ],
+    ];
+    for (const criterionResults of reports) {
+      await expect(
+        agentB.finishHandoff(state.id, { ...base, status: 'completed', criterionResults }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect((await agentB.getHandoff(state.id)).status).toBe('accepted');
+    }
+    const failed = await agentB.finishHandoff(state.id, {
+      ...base,
+      status: 'failed',
+      criterionResults: [
+        { criterionIndex: 0, met: true },
+        { criterionIndex: 1, met: false, reason: 'Report unavailable' },
+      ],
+    });
+    expect(failed.handoff.acceptedVersion).toBe(1);
+    expect((await agentB.verifyReceipt(failed.receipt.signedReceipt)).event).toEqual(
+      failed.receipt.event,
+    );
+    const persisted =
+      await database`SELECT claims FROM handoff_receipts WHERE id=${failed.receipt.receiptId}`;
+    expect(persisted[0].claims.event).toEqual(failed.receipt.event);
+  },
+);
+
 integration('sessions enforce origin, CSRF, logout, expiry and CORS', async () => {
   for (const login of ['a', 'missing-user']) {
     const invalid = await app.request('/api/v2/session', {

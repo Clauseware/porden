@@ -3,6 +3,9 @@ import {
   CreateHandoff, VersionCommand, ProposeRevision, RevisionDecision, FinishHandoff,
   HandoffDetail, HandoffList, HandoffMutation, HandoffAuthorization, HandoffQuery,
   PlatformSignIn, PlatformSession, Organization, PendingApprovals, WorkflowHistory, ErrorResponse,
+  RequestClarification, ResolveClarification, VerifyAuthorization, ReserveExecution, SettleExecution,
+  HandoffReceiptClaims,
+  canonicalize,
 } from '@porden/contracts';
 import { PordenError } from './error';
 
@@ -10,6 +13,12 @@ export class HandoffWriteUnknown extends PordenError {
   constructor(public operationId:string,options?:ErrorOptions,status=0,requestId?:string) {super('OUTCOME_UNKNOWN',status,requestId,options);}
 }
 export type HandoffClientOptions={baseUrl?:string;token?:string;fetch?:(input:string,init?:RequestInit)=>Promise<Response>};
+export async function hashParameters(parameters:unknown) {
+  let value:string;
+  try {value=canonicalize(parameters);} catch(cause) {throw new PordenError('INVALID_INPUT',400,undefined,{cause});}
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
 export function createHandoffClient(options:HandoffClientOptions={}) {
   const base=(options.baseUrl||'/api/v2').replace(/\/$/,'');
   const fetcher=options.fetch||fetch;
@@ -49,6 +58,8 @@ export function createHandoffClient(options:HandoffClientOptions={}) {
     const body=input(schema,value);
     return request(path,HandoffMutation,body,body.requestId);
   }
+  type Command<T> = Omit<T, 'requestId'> & {requestId?: string};
+  const withId = <T extends {requestId?: string}>(value: T) => ({...value, requestId: value.requestId === undefined ? crypto.randomUUID() : value.requestId});
   return {
     session,
     async signIn(value:z.infer<typeof PlatformSignIn>) {csrf=undefined;const result=await request('/session',PlatformSession,input(PlatformSignIn,value));csrf=result.csrf;return result;},
@@ -60,15 +71,38 @@ export function createHandoffClient(options:HandoffClientOptions={}) {
       return request(`/handoffs?${params}`,HandoffList);
     },
     getHandoff:(value:string)=>request(`/handoffs/${id(value)}`,HandoffDetail),
-    createHandoff:(value:z.infer<typeof CreateHandoff>)=>command('/handoffs',CreateHandoff,value),
-    approveHandoff:(value:string,body:z.infer<typeof VersionCommand>)=>command(`/handoffs/${id(value)}/approve`,VersionCommand,body),
-    acceptHandoff:(value:string,body:z.infer<typeof VersionCommand>)=>command(`/handoffs/${id(value)}/accept`,VersionCommand,body),
-    rejectHandoff:(value:string,body:z.infer<typeof VersionCommand>)=>command(`/handoffs/${id(value)}/reject`,VersionCommand,body),
-    cancelHandoff:(value:string,body:z.infer<typeof VersionCommand>)=>command(`/handoffs/${id(value)}/cancel`,VersionCommand,body),
-    proposeRevision:(value:string,body:z.infer<typeof ProposeRevision>)=>command(`/handoffs/${id(value)}/revisions`,ProposeRevision,body),
-    decideRevision:(value:string,revisionId:string,body:z.infer<typeof RevisionDecision>)=>command(`/handoffs/${id(value)}/revisions/${id(revisionId)}/decision`,RevisionDecision,body),
-    finishHandoff:(value:string,body:z.infer<typeof FinishHandoff>)=>command(`/handoffs/${id(value)}/finish`,FinishHandoff,body),
+    createHandoff:(value:Command<z.infer<typeof CreateHandoff>>)=>command('/handoffs',CreateHandoff,withId(value)),
+    approveHandoff:(value:string,body:Command<z.infer<typeof VersionCommand>>)=>command(`/handoffs/${id(value)}/approve`,VersionCommand,withId(body)),
+    acceptHandoff:(value:string,body:Command<z.infer<typeof VersionCommand>>)=>command(`/handoffs/${id(value)}/accept`,VersionCommand,withId(body)),
+    rejectHandoff:(value:string,body:Command<z.infer<typeof VersionCommand>>)=>command(`/handoffs/${id(value)}/reject`,VersionCommand,withId(body)),
+    cancelHandoff:(value:string,body:Command<z.infer<typeof VersionCommand>>)=>command(`/handoffs/${id(value)}/cancel`,VersionCommand,withId(body)),
+    proposeRevision:(value:string,body:Command<z.infer<typeof ProposeRevision>>)=>command(`/handoffs/${id(value)}/revisions`,ProposeRevision,withId(body)),
+    decideRevision:(value:string,revisionId:string,body:Command<z.infer<typeof RevisionDecision>>)=>command(`/handoffs/${id(value)}/revisions/${id(revisionId)}/decision`,RevisionDecision,withId(body)),
+    finishHandoff:(value:string,body:Command<z.infer<typeof FinishHandoff>>)=>command(`/handoffs/${id(value)}/finish`,FinishHandoff,withId(body)),
     getAuthorization:(value:string,version:number)=>request(`/handoffs/${id(value)}/authorization?version=${input(z.number().int().positive(),version)}`,HandoffAuthorization),
+    // Verification is a snapshot. Reserve before protected writes; settle only after their outcome is known.
+    verifyAuthorization:(value:string,body:z.infer<typeof VerifyAuthorization>)=>request(`/handoffs/${id(value)}/authorization/verify`,HandoffAuthorization,input(VerifyAuthorization,body)),
+    requestClarification:(value:string,body:Command<z.infer<typeof RequestClarification>>)=>command(`/handoffs/${id(value)}/clarifications`,RequestClarification,withId(body)),
+    resolveClarification:(value:string,body:Command<z.infer<typeof ResolveClarification>>)=>command(`/handoffs/${id(value)}/clarifications/resolve`,ResolveClarification,withId(body)),
+    reserveExecution:(value:string,body:Command<z.infer<typeof ReserveExecution>>)=>command(`/handoffs/${id(value)}/executions`,ReserveExecution,withId(body)),
+    settleExecution:(value:string,body:Command<z.infer<typeof SettleExecution>>)=>command(`/handoffs/${id(value)}/executions/settle`,SettleExecution,withId(body)),
+    async verifyReceipt(token:string) {
+      try {
+        const parts=token.split('.');
+        if(parts.length!==3 || parts.some(part=>! /^[\w-]+$/.test(part))) throw Error('Malformed receipt');
+        const decode=(part:string)=>Uint8Array.from(atob(part.replaceAll('-','+').replaceAll('_','/')),char=>char.charCodeAt(0));
+        const header=z.strictObject({alg:z.literal('ES256'),typ:z.literal('porden-handoff-receipt+jwt'),kid:z.string()}).parse(JSON.parse(new TextDecoder().decode(decode(parts[0]))));
+        const origin=new URL(base,typeof location==='undefined'?undefined:location.href).origin;
+        const response=await fetcher(origin+'/.well-known/jwks.json',{redirect:'error',signal:AbortSignal.timeout(5000)});
+        if(!response.ok) throw Error('Receipt keys unavailable');
+        const keys=z.object({keys:z.array(z.object({kid:z.string(),alg:z.literal('ES256'),kty:z.literal('EC'),crv:z.literal('P-256'),use:z.literal('sig'),x:z.string(),y:z.string()}))}).parse(await response.json());
+        const jwk=keys.keys.find(key=>key.kid===header.kid);
+        if(!jwk) throw Error('Unknown receipt key');
+        const key=await crypto.subtle.importKey('jwk',jwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+        if(!await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]))) throw Error('Invalid receipt signature');
+        return HandoffReceiptClaims.parse(JSON.parse(new TextDecoder().decode(decode(parts[1]))));
+      } catch(cause) { throw new PordenError('SIGNATURE_INVALID',403,undefined,{cause}); }
+    },
     listPendingApprovals:()=>request('/approvals',PendingApprovals),
     getWorkflowHistory:(value:string)=>request(`/workflows/${id(value)}`,WorkflowHistory),
     reconcileOperation:(value:string)=>request(`/operations/${id(value)}`,HandoffMutation),

@@ -273,7 +273,7 @@ describe('consistent failure boundaries', () => {
       },
       signing,
     );
-    await check(await notReady.request('/readyz'), 'NOT_READY', 503);
+    await check(await notReady.request('/ready'), 'NOT_READY', 503);
   });
   test('nested system codes are recorded without secrets or query bodies', async () => {
     const logs = spyOn(logger, 'error').mockImplementation(() => {});

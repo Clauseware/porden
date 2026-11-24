@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import Link from 'next/link';
-import { createPordenClient, getErrorMessage, PordenError } from '@porden/sdk';
+import { createPordenClient, getErrorMessage, PordenError } from '@porden/sdk/delivery';
 import PordenSymbol from '../../logo';
 import {
   DamageData,

@@ -72,7 +72,7 @@ Fixtures are exported from `@porden/sdk/fixtures`: accepted, cancelled, unknown,
 
 ## API and contract decisions
 
-Routes use `/api/v1` on each public origin. Both expose `/healthz`, `/readyz`, public discovery/runtime assets and `/.well-known/jwks.json`. Login is `POST /api/v1/session` with `{password}`; authenticated GET returns a CSRF token. Writes require the exact public Origin, organization session and CSRF token.
+Routes use `/api/v1` on each public origin. Both expose `/health`, `/ready`, public discovery/runtime assets and `/.well-known/jwks.json`. Login is `POST /api/v1/session` with `{password}`; authenticated GET returns a CSRF token. Writes require the exact public Origin, organization session and CSRF token.
 
 Merchant supports `POST /transfers`, `GET /transfers/:id`, and POST suffixes `/approve`, `/submit`, `/outcome`, `/receipts`, `/reconcile` under `/api/v1`. `/outcome` accepts only `cancelled` or `unknown`; a client cannot mark itself accepted. `/api/config` now also publishes the configured recipient origin for the UI. Courier supports public `GET /api/v1/case-types`, first-party `POST /api/v1/cases`, partner-authenticated read-only `/api/v1/cases/by-request/:requestId` and `/by-transfer/:id`, and customer-session-protected `GET /api/v1/receipts/:id` for the receipt screen. The partner credential stays server-side. No public unauthenticated write endpoint is provided.
 

@@ -78,6 +78,14 @@ export const Session = z.strictObject({customerId: z.literal('demo-user'), csrf:
 export const ErrorResponse = z.object({error:z.object({code:z.string().min(1),message:z.string().optional(),requestId:z.uuid().optional()})});
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 export const errorMessages: Record<string,string> = {
+  CLARIFICATION_REQUIRED:'Essential information is missing. Resolve the clarification before execution.',
+  SCOPE_MISMATCH:'The action parameters differ from the authorized terms.',
+  EXECUTION_RESERVED:'An execution is unresolved. Reconcile it before changing this handoff.',
+  EXECUTION_ALREADY_COMPLETED:'This action has already been completed.',
+  AUTHORIZATION_UNAVAILABLE:'Authorization could not be verified. Check the saved operation before submitting again.',
+  AUTHORIZED:'The action is authorized.', STALE_VERSION:'The handoff version has changed.',
+  AWAITING_APPROVAL:'The revised terms require approval.', ACCEPTANCE_REQUIRED:'The exact version requires approval and receiver acceptance.',
+  TERMINAL_STATE:'This handoff is already closed.',
   OUTCOME_UNKNOWN:'The write outcome is unknown. Check the saved operation before submitting anything else.',
   SESSION_CHANGED:'The signed-in account changed. Sign in again before continuing.',
   INVALID_INPUT:'Check the supplied details and try again.', INVALID_RESPONSE:'The service returned an invalid response. Check the transfer before trying again.',
