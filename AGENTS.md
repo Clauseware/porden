@@ -26,13 +26,14 @@ Applies to the entire repository. More specific instructions may be added only w
 
 ## Frontend (Next.js and TypeScript)
 
-- Use the existing merchant and courier Next.js applications and shared contracts/browser SDK.
+- Use the existing Next.js applications: `apps/porden` (public landing site), `apps/merchant-web` and `apps/courier-web` (demo organizations), plus the shared contracts/browser SDK.
 - Prefer Server Components for server-rendered content and Client Components only where browser interaction is needed.
 - Use React state and effects when appropriate. Do not add `useCallback` or `useMemo` without a demonstrated correctness or performance reason.
 - Avoid unnecessary global state, custom hooks, wrappers, and component abstraction.
 - Keep state minimal and derive display values from existing state when possible.
 - Make loading, approval, cancellation, refusal, success, and error states explicit and accessible.
-- Follow Porden's Forest & Paper identity: Forest `#0F3D2E`, Sage `#4E7C66`, Paper `#F6F4EB`, Ink `#1F1F1F`.
+- Follow Porden's dark-only brand: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text), with the Connector mark (`apps/porden/public/porden-mark.svg`). Theme tokens live in `apps/porden/app/globals.css`; use semantic tokens rather than raw hex values.
+- The merchant and courier demo apps still use the earlier Forest & Paper palette. Do not restyle them unless asked.
 - Prioritize usable, readable interfaces and the working end-to-end flow before polish.
 
 ## Testing and delivery
@@ -40,6 +41,7 @@ Applies to the entire repository. More specific instructions may be added only w
 - Test successful transfers, both approvals, cancellation, refusal, tampering, retries, and unknown-outcome reconciliation in a real browser.
 - Verify organization database permissions and cross-origin behavior in the deployed environment.
 - Run focused tests first, then relevant integration tests, typechecks, SDK builds, and frontend builds.
+- Use Bun 1.4.3, the version pinned in `packageManager`. Older Bun versions cannot read `bun.lock` and silently rewrite it.
 - Report completed changes, tests and exact results, outstanding risks, and unverified behavior.
 - Ask before expanding scope or introducing a new architectural pattern.
 
