@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import '../../brand.css';
+import { THEME_COLORS, themeInitScript } from '../components/theme';
 import './landing.css';
 
 export const metadata: Metadata = {
@@ -9,12 +10,15 @@ export const metadata: Metadata = {
     'Porden moves tasks between organizations. Each handoff has a locked version, a human approval step when the sender requires it, and a signed receipt. A receipt means accepted, not resolved.',
 };
 
-// Same value as --bg in apps/brand.css.
-export const viewport: Viewport = { themeColor: '#0c0c0e' };
+// Dark is the default. The inline script below and the toggle change this per theme.
+export const viewport: Viewport = { themeColor: THEME_COLORS.dark };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>{children}</body>
     </html>
   );

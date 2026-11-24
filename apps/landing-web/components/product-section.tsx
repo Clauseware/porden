@@ -9,6 +9,7 @@ import {
   VersionsIcon,
 } from './icons';
 import { Illo, type IlloName } from './illo';
+import { EXAMPLE_NOTE } from './example-note';
 import { Tabs, type TabItem } from './tabs';
 
 type Product = {
@@ -95,7 +96,7 @@ const items: TabItem[] = products.map((p) => ({
   ),
 }));
 
-const installText = "import { createHandoffClient } from '@porden/sdk';";
+const installText = 'npm i porden';
 
 const install = (
   <div className="install">
@@ -103,12 +104,12 @@ const install = (
     <div className="code code--line">
       <pre id="code-install">
         <code>
-          <span className="k">import</span> {'{ createHandoffClient }'}{' '}
-          <span className="k">from</span> {"'@porden/sdk'"};
+          <span className="c">$</span> npm i porden
         </code>
       </pre>
-      <CopyButton text={installText} label="Copy import" />
+      <CopyButton text={installText} label="Copy command" />
     </div>
+    <p className="caption">{EXAMPLE_NOTE}</p>
   </div>
 );
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { CopyButton } from './copy-button';
 import { CheckIcon } from './icons';
+import { EXAMPLE_NOTE } from './example-note';
 import { Illo, type IlloName } from './illo';
 
 type Step = {
@@ -13,9 +14,10 @@ type Step = {
   copyLabel: string;
   code: ReactNode;
   illo: IlloName;
+  note?: string;
 };
 
-const createText = `import { createHandoffClient } from '@porden/sdk';
+const createText = `import { createHandoffClient } from 'porden';
 
 // Server-side only. Keep the token out of browser bundles.
 const porden = createHandoffClient({
@@ -60,7 +62,7 @@ const steps: Step[] = [
     code: (
       <code>
         <span className="k">import</span> {'{ createHandoffClient }'}{' '}
-        <span className="k">from</span> {"'@porden/sdk'"};{'\n\n'}
+        <span className="k">from</span> {"'porden'"};{'\n\n'}
         <span className="c">{'// Server-side only. Keep the token out of browser bundles.'}</span>
         {'\nconst porden = createHandoffClient({\n  baseUrl: '}
         {"'https://porden.example/api/v2'"}
@@ -80,6 +82,7 @@ const steps: Step[] = [
       </code>
     ),
     illo: 'locked-version',
+    note: EXAMPLE_NOTE,
   },
   {
     num: '02',
@@ -159,6 +162,7 @@ export function StepsSection() {
                   <CopyButton text={s.copyText} label={s.copyLabel} />
                 </div>
                 <pre>{s.code}</pre>
+                {s.note ? <p className="caption caption--code">{s.note}</p> : null}
               </div>
             </div>
             <div className="step__well well well--inset">

@@ -21,10 +21,14 @@
   --z-bar: 20;
   --z-skip: 30;
 
+  /* Lavender as text, lines and focus. Dark keeps the brand lavender; light uses a darker ink. */
+  --accent-ink: var(--lavender);
+  --accent-ink-hover: var(--lavender-hover);
+
   /* Isometric roles: the assets mix every face from these, on the dark path. */
   --illos-ground: var(--surface);
   --illos-ink: var(--text);
-  --illos-accent: var(--lavender);
+  --illos-accent: var(--accent-ink);
   --illos-dark: 1;
 }
 
@@ -112,7 +116,7 @@ pre {
   margin-inline: auto;
 }
 :focus-visible {
-  outline: 2px solid var(--lavender);
+  outline: 2px solid var(--accent-ink);
   outline-offset: 3px;
 }
 ::selection {
@@ -367,7 +371,7 @@ pre {
 }
 .runs .is-live .i,
 .runs .is-live span {
-  color: var(--lavender);
+  color: var(--accent-ink);
 }
 .figures {
   grid-column: 1 / -1;
@@ -489,7 +493,7 @@ pre {
   border-color: var(--border);
 }
 .tab[aria-selected='true'] .i {
-  color: var(--lavender);
+  color: var(--accent-ink);
 }
 @media (hover: hover) and (pointer: fine) {
   .tab[aria-selected='false']:hover {
@@ -532,7 +536,7 @@ pre {
   min-height: 44px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--lavender);
+  color: var(--accent-ink);
 }
 .more .i {
   width: 16px;
@@ -541,7 +545,7 @@ pre {
 }
 @media (hover: hover) and (pointer: fine) {
   .more:hover {
-    color: var(--lavender-hover);
+    color: var(--accent-ink-hover);
   }
   .more:hover .i {
     transform: translateX(2px);
@@ -597,7 +601,7 @@ pre {
   line-height: 1;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--lavender);
+  color: var(--accent-ink);
   margin-bottom: var(--s-3);
 }
 .step__well {
@@ -704,16 +708,32 @@ pre {
 
 /* tablet and phone */
 @media (min-width: 1024px) {
-  /* The step cards stack as you scroll, each a little lower than the last. */
+  .steps {
+    gap: var(--s-8);
+  }
+}
+/* The step cards stack as you scroll, and each earlier card keeps its number and title in view.
+   Each step sits 120px lower than the last. The stack needs about 940px of viewport height to fit
+   all three; on shorter windows the cards flow normally with the gap above. */
+@media (min-width: 1024px) and (min-height: 940px) {
+  /* Room after the last card, so card 1 stays pinned until card 3 has joined the stack. A sticky
+     card can only move inside the grid content box, so this is an empty grid item, not padding. */
+  .steps::after {
+    content: '';
+    height: calc(var(--s-8) * 2);
+  }
   .step {
     position: sticky;
-    top: calc(96px + var(--i) * 20px);
+    top: calc(88px + var(--i) * 120px);
   }
   .step:nth-child(1) {
     --i: 0;
   }
   .step:nth-child(2) {
     --i: 1;
+    /* Card 1 is taller than card 2, so its lower part would show in the gap under card 2. This
+       paints the page colour there. It is a mask, not a visible shadow. */
+    box-shadow: 0 240px 0 0 var(--bg);
   }
   .step:nth-child(3) {
     --i: 2;
@@ -892,6 +912,50 @@ pre {
     padding: var(--s-6) var(--s-5);
   }
 }
+/* theme toggle and small captions */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-control);
+  color: var(--text);
+  transition: background-color var(--t-fast) var(--ease);
+}
+.theme-toggle--menu {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .theme-toggle:hover {
+    background: var(--surface-raised);
+  }
+}
+.caption {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.caption--code {
+  padding: 0 var(--s-4) var(--s-3);
+}
+@media (max-width: 960px) {
+  .theme-toggle--bar {
+    display: none;
+  }
+  .nav .theme-toggle--menu {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s-3);
+    width: 100%;
+    min-height: 48px;
+    margin-top: var(--s-3);
+    padding: 0 var(--s-4);
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -905,4 +969,37 @@ pre {
 /* The open phone menu covers the page, so the page under it stays put. */
 .menu-open {
   overflow: hidden;
+}
+
+/* Light theme. This block is the only place the landing departs from the dark-only brand rule, by
+   decision. Delete it to return to dark only. Lavender fills stay; lavender as text, lines and
+   focus becomes --accent-ink, because lavender on white is about 2:1. */
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f4f4f7;
+  --surface-raised: #e9e9ef;
+  --text: #0c0c0e;
+  --muted: #4a4a55;
+  --border: #d6d6de;
+  --field-border: #767683;
+  --lavender-hover: #b88dbe;
+  --success: #1f6b3a;
+  --accent-ink: #7a4a82;
+  --accent-ink-hover: #5e3865;
+  --illos-dark: 0;
+}
+[data-theme='light'] .symbol {
+  color: var(--text);
+}
+[data-theme='light'] .btn--primary {
+  border: 1px solid var(--accent-ink);
+}
+[data-theme='light'] .tab[aria-selected='true'] {
+  border-color: var(--field-border);
+}
+@media (max-width: 960px) {
+  [data-theme='light'] .tab {
+    border-color: var(--field-border);
+  }
 }

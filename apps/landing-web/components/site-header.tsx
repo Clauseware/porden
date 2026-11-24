@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import PordenSymbol from '../../logo';
 import { MenuCloseIcon, MenuOpenIcon } from './icons';
 import { LANDING_LINKS } from './landing-links';
+import { ThemeToggle } from './theme-toggle';
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
@@ -55,6 +56,7 @@ export function SiteHeader() {
               Sign in
             </a>
           )}
+          <ThemeToggle variant="menu" />
         </nav>
         <div className="bar__end">
           {LANDING_LINKS.signIn && (
@@ -62,6 +64,7 @@ export function SiteHeader() {
               Sign in
             </a>
           )}
+          <ThemeToggle variant="bar" />
           <a className="btn btn--primary btn--sm" href={LANDING_LINKS.getStarted}>
             Get started
           </a>
