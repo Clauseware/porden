@@ -1,0 +1,22 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; justify-content: center; padding: 0 220px; }
+    #hk-mark { display: flex; align-items: center; gap: 20px; font-size: 44px; font-weight: 700; margin-bottom: 48px; }
+    #hk-mark svg { height: 52px; color: var(--lavender); }
+    .hk-line { overflow: hidden; padding-bottom: 14px; }
+    .hk-line h1 { font-size: 150px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.06; }
+    #hk-t2 { color: var(--lavender); }
+  </style>
+  <div id="root" data-composition-id="hook" data-width="1920" data-height="1080">
+    <div id="hk-mark"><svg viewBox="0 0 64 60" fill="currentColor"><path d="M33 0H45A19 19 0 0 1 45 38H43V14H33Z" /><path d="M0 31A14 14 0 0 1 14 17H39V38H20V56A4 4 0 0 1 16 60H4A4 4 0 0 1 0 56Z" /></svg> porden</div>
+    <div class="hk-line"><h1 id="hk-t1" data-var-text="headline1">Context carried</h1></div>
+    <div class="hk-line"><h1 id="hk-t2" data-var-text="headline2">with permission.</h1></div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#hk-t1", { yPercent: 110 }, { yPercent: 0, duration: 0.55, ease: "expo.out" }, 0.1);
+    tl.fromTo("#hk-t2", { yPercent: 110 }, { yPercent: 0, duration: 0.55, ease: "expo.out" }, 0.4);
+    tl.to("#root", { opacity: 0, x: -200, duration: 0.35, ease: "power2.in" }, 2.0);
+    window.__timelines["hook"] = tl;
+  </script>
+</template>

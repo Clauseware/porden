@@ -1,0 +1,24 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; justify-content: center; padding: 0 220px; }
+    #hook-mark { display: flex; align-items: center; gap: 20px; font-size: 40px; font-weight: 700; margin-bottom: 56px; }
+    #hook-mark svg { height: 48px; color: var(--lavender); }
+    #hook-mark span { color: var(--muted); font-weight: 400; }
+    .hook-line { overflow: hidden; padding-bottom: 12px; }
+    .hook-line h1 { font-size: 140px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.08; }
+    #hook-l2 h1 { color: var(--lavender); }
+  </style>
+  <div data-hf-id="hf-ktv8" id="root" data-composition-id="hook" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-co8e" id="hook-mark">
+      porden<span data-hf-id="hf-p76i" data-hf-text-key="child:1:span">&#160;/ merchant</span></div>
+    <div data-hf-id="hf-50o1" class="hook-line" id="hook-l1"><h1 data-hf-id="hf-95oz" id="hook-t1" data-var-text="headline1">Share the context.</h1></div>
+    <div data-hf-id="hf-8ys2" class="hook-line" id="hook-l2"><h1 data-hf-id="hf-1sm3" id="hook-t2" data-var-text="headline2">Keep the choice.</h1></div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#hook-t1", { yPercent: 110 }, { yPercent: 0, duration: 0.6, ease: "expo.out" }, 0.1);
+    tl.fromTo("#hook-t2", { yPercent: 110 }, { yPercent: 0, duration: 0.6, ease: "expo.out" }, 0.45);
+    tl.to("#root", { opacity: 0, scale: 0.96, filter: "blur(6px)", duration: 0.35, ease: "power2.in" }, 2.8);
+    window.__timelines["hook"] = tl;
+  </script>
+</template>

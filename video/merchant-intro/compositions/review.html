@@ -1,0 +1,41 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+    #rv-panel { width: 1240px; background: var(--surface); border: 2px solid var(--border); border-radius: 28px; padding: 64px 72px; }
+    #rv-panel h2 { font-size: 52px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 40px; }
+    .rv-row { display: grid; grid-template-columns: 340px 1fr; gap: 24px; padding: 22px 0; border-top: 2px solid var(--border); font-size: 30px; }
+    .rv-row dt { color: var(--muted); }
+    #rv-note { margin-top: 28px; font-size: 28px; color: var(--muted); }
+    #rv-actions { display: flex; gap: 24px; margin-top: 44px; }
+    .rv-btn { font-size: 32px; font-weight: 700; padding: 22px 40px; border-radius: 14px; }
+    #rv-approve { background: var(--lavender); color: var(--bg); }
+    #rv-cancel { border: 2px solid var(--border); color: var(--text); font-weight: 400; }
+    #rv-cursor { position: absolute; left: 0; top: 0; width: 64px; z-index: 5; }
+  </style>
+  <div id="root" data-composition-id="review" data-width="1920" data-height="1080">
+    <section id="rv-panel">
+      <h2>Share these details with the courier?</h2>
+      <dl>
+        <div class="rv-row" id="rv-r1"><dt>Order reference</dt><dd>DEMO-1042</dd></div>
+        <div class="rv-row" id="rv-r2"><dt>Damage description</dt><dd>The parcel arrived with a damaged outer box and a broken item inside.</dd></div>
+      </dl>
+      <div id="rv-actions">
+        <div class="rv-btn" id="rv-approve">Approve sharing</div>
+        <div class="rv-btn" id="rv-cancel">Cancel transfer</div>
+      </div>
+    </section>
+    <svg id="rv-cursor" viewBox="0 0 24 24"><path d="M3 2l17 10-7.5 1.5L9 21z" fill="#f5f5f5" stroke="#0c0c0e" stroke-width="1.5" stroke-linejoin="round"/></svg>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#rv-panel", { opacity: 0, y: 80, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "expo.out" }, 0);
+    tl.fromTo(["#rv-r1", "#rv-r2", "#rv-actions"], { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.15, ease: "power3.out" }, 0.3);
+    tl.fromTo("#rv-cursor", { x: 1960, y: 1120 }, { x: 590, y: 700, duration: 0.7, ease: "power3.inOut" }, 1.3);
+    tl.to("#rv-cursor", { scale: 0.85, duration: 0.08, yoyo: true, repeat: 1 }, 2.05);
+    tl.to("#rv-approve", { scale: 0.94, duration: 0.08, yoyo: true, repeat: 1 }, 2.05);
+    tl.to("#rv-approve", { backgroundColor: "#8fd4a4", duration: 0.2 }, 2.15);
+    tl.to("#rv-panel", { scale: 1.6, opacity: 0, duration: 0.5, ease: "power3.in" }, 3.2);
+    tl.to("#rv-cursor", { opacity: 0, duration: 0.2 }, 3.2);
+    window.__timelines["review"] = tl;
+  </script>
+</template>

@@ -1,0 +1,19 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+    #ec-lockup { display: flex; align-items: center; gap: 28px; font-size: 120px; font-weight: 900; letter-spacing: -0.04em; }
+    #ec-lockup svg { height: 124px; color: var(--lavender); }
+    #ec-tag { font-size: 40px; color: var(--muted); }
+  </style>
+  <div id="root" data-composition-id="endcard" data-width="1920" data-height="1080">
+    <div id="ec-lockup"><svg viewBox="0 0 64 60" fill="currentColor"><path d="M33 0H45A19 19 0 0 1 45 38H43V14H33Z" /><path d="M0 31A14 14 0 0 1 14 17H39V38H20V56A4 4 0 0 1 16 60H4A4 4 0 0 1 0 56Z" /></svg> porden</div>
+    <p id="ec-tag">Share the context. Keep the choice.</p>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#ec-lockup svg", { opacity: 0, scale: 0.4, rotate: -20 }, { opacity: 1, scale: 1, rotate: 0, duration: 0.45, ease: "back.out(2)" }, 0);
+    tl.fromTo("#ec-lockup", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.45, ease: "power3.out" }, 0.05);
+    tl.fromTo("#ec-tag", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.35 }, 0.35);
+    window.__timelines["endcard"] = tl;
+  </script>
+</template>

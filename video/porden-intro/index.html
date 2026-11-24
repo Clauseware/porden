@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-composition-variables='[{"id":"headline1","type":"string","label":"Headline line 1","default":"Context carried"},{"id":"headline2","type":"string","label":"Headline line 2","default":"with permission."},{"id":"lavender","type":"color","label":"Primary","default":"#c5a1c9"}]'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --lavender: #c5a1c9;
+        --bg: #0c0c0e;
+        --surface: #1a1a1f;
+        --surface-raised: #24242b;
+        --text: #f5f5f5;
+        --muted: #a3a3ad;
+        --border: #2e2e36;
+        --success: #8fd4a4;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+      #root { width: 100%; height: 100%; font-family: Inter, sans-serif; color: var(--text); }
+      #ground { position: absolute; inset: 0; background: var(--bg); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="10" data-width="1920" data-height="1080">
+      <div id="ground"></div>
+      <div id="hook" data-composition-id="hook" data-composition-src="compositions/hook.html" data-start="0" data-duration="2.4" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+      <div id="relay" data-composition-id="relay" data-composition-src="compositions/relay.html" data-start="2.4" data-duration="5.6" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+      <div id="endcard" data-composition-id="endcard" data-composition-src="compositions/endcard.html" data-start="8" data-duration="2" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080"></div>
+    </div>
+    <script>
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>

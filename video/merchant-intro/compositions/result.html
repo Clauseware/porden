@@ -1,0 +1,39 @@
+<template>
+  <style>
+    #root { position: absolute; inset: 0; background: var(--bg); }
+    #rs-card { position: absolute; left: 440px; top: 250px; width: 1040px; background: var(--surface); border: 2px solid var(--success); border-radius: 28px; padding: 56px 64px; }
+    #rs-card h2 { font-size: 52px; font-weight: 700; letter-spacing: -0.02em; }
+    #rs-hint { font-size: 28px; color: var(--muted); margin: 16px 0 36px; }
+    #rs-status { display: flex; align-items: center; gap: 16px; font-size: 40px; font-weight: 700; color: var(--success); }
+    #rs-status svg { width: 48px; height: 48px; }
+    #rs-end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+    #rs-lockup { display: flex; align-items: center; gap: 28px; font-size: 104px; font-weight: 900; letter-spacing: -0.04em; }
+    #rs-lockup svg { height: 110px; color: var(--lavender); }
+    #rs-lockup span { color: var(--lavender); font-weight: 400; }
+    #rs-tag { font-size: 36px; color: var(--muted); }
+  </style>
+  <div data-hf-id="hf-6xgm" id="root" data-composition-id="result" data-width="1920" data-height="1080">
+    <aside data-hf-id="hf-ooj0" id="rs-card">
+      <h2 data-hf-id="hf-b6ig">Courier received your case</h2>
+      <p data-hf-id="hf-2y89" id="rs-hint">Accepted for investigation.</p>
+      <div data-hf-id="hf-qa5j" id="rs-status">Receipt verified
+        <svg data-hf-id="hf-5tvn" viewBox="0 0 16 16"><path data-hf-id="hf-jbqn" id="rs-check" d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="16" stroke-dashoffset="16" /></svg>
+      </div>
+    </aside>
+    <div data-hf-id="hf-9xzs" id="rs-end">
+      <div data-hf-id="hf-7jrj" id="rs-lockup">
+        porden<span data-hf-id="hf-e1zl" data-hf-text-key="child:1:span">&#160;merchant</span></div>
+      <p data-hf-id="hf-n8ea" id="rs-tag">Context carried with permission.</p>
+    </div>
+  </div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo("#rs-card", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 0);
+    tl.fromTo("#rs-check", { attr: { "stroke-dashoffset": 16 } }, { attr: { "stroke-dashoffset": 0 }, duration: 0.4, ease: "power2.out" }, 0.45);
+    tl.to("#rs-card", { opacity: 0, y: -60, duration: 0.35, ease: "power2.in" }, 1.25);
+    tl.fromTo("#rs-lockup svg", { opacity: 0, scale: 0.4, rotate: -20 }, { opacity: 1, scale: 1, rotate: 0, duration: 0.5, ease: "back.out(2)" }, 1.5);
+    tl.fromTo("#rs-lockup", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.5, ease: "power3.out" }, 1.55);
+    tl.fromTo("#rs-tag", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 1.9);
+    window.__timelines["result"] = tl;
+  </script>
+</template>
