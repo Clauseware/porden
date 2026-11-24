@@ -48,6 +48,15 @@
         "react-dom": "19.2.8",
       },
     },
+    "apps/landing-web": {
+      "name": "@porden/landing-web",
+      "version": "0.1.0",
+      "dependencies": {
+        "next": "16.4.6",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+      },
+    },
     "apps/merchant-web": {
       "name": "@porden/merchant-web",
       "version": "0.1.0",
@@ -292,6 +301,8 @@
     "@porden/courier-web": ["@porden/courier-web@workspace:apps/courier-web"],
 
     "@porden/dashboard-web": ["@porden/dashboard-web@workspace:apps/dashboard-web"],
+
+    "@porden/landing-web": ["@porden/landing-web@workspace:apps/landing-web"],
 
     "@porden/merchant-web": ["@porden/merchant-web@workspace:apps/merchant-web"],
 
