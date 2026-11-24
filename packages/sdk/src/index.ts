@@ -88,6 +88,11 @@ export function createPordenClient(options: ClientOptions = {}) {
         headers: {'Content-Type': 'application/json'}, body: JSON.stringify(parseInput(SignIn,{password}))});
       csrf = parseResponse(Session,payload).csrf;
     },
+    async getSession() {
+      const session = parseResponse(Session,await request('/v1/session'));
+      csrf = session.csrf;
+      return session;
+    },
     async getConfig() {
       return parseResponse(PublicConfig,await fetchJson(`${base}/config`));
     },
