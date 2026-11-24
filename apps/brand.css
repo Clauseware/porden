@@ -1,0 +1,29 @@
+/* Porden brand tokens. Dark-only palette from the brand identity sheet. */
+:root {
+  color-scheme: dark;
+  --lavender: #c5a1c9;
+  --lavender-hover: #d6bcd9;
+  --on-lavender: #0c0c0e;
+  --bg: #0c0c0e;
+  --surface: #1a1a1f;
+  --surface-raised: #24242b;
+  --text: #f5f5f5;
+  --muted: #a3a3ad;
+  --border: #2e2e36;
+  --field-border: #4a4a55;
+  --danger: #ff9b94;
+  --danger-surface: #2a1517;
+  --font: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 var(--font);
+}
+.symbol {
+  height: 1em;
+  width: auto;
+  color: var(--lavender);
+  flex: none;
+}

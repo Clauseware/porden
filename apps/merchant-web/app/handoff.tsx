@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { createPordenClient, getErrorMessage, PordenError } from '@porden/sdk';
+import PordenSymbol from '../../logo';
 import {
   DamageData,
   type PublicConfig,
@@ -162,6 +163,7 @@ export default function Handoff() {
     <>
       <header className="topbar">
         <Link className="wordmark" href="/">
+          <PordenSymbol />
           porden<span> / merchant</span>
         </Link>
         <span className="badge">Independent merchant</span>

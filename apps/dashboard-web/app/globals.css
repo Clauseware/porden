@@ -1,20 +1,5 @@
-:root {
-  color-scheme: light;
-  --forest: #0f3d2e;
-  --sage: #4e7c66;
-  --paper: #f6f4eb;
-  --ink: #1f1f1f;
-}
 * {
   box-sizing: border-box;
-}
-body {
-  margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font:
-    16px/1.6 Arial,
-    sans-serif;
 }
 main {
   max-width: 1200px;
@@ -26,15 +11,18 @@ header {
   align-items: center;
   gap: 24px;
   flex-wrap: wrap;
-  border-bottom: 1px solid #c3cec5;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 16px;
 }
 .brand {
-  font:
-    bold 30px Georgia,
-    serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 30px;
+  font-weight: 750;
+  letter-spacing: -1.2px;
   text-decoration: none;
-  color: var(--forest);
+  color: var(--text);
 }
 header button {
   margin-left: auto;
@@ -42,16 +30,15 @@ header button {
 h1,
 h2,
 h3 {
-  color: var(--forest);
+  color: var(--text);
   line-height: 1.25;
 }
 h1 {
-  font:
-    40px Georgia,
-    serif;
+  font-size: 40px;
+  letter-spacing: -1px;
 }
 a {
-  color: var(--forest);
+  color: var(--lavender);
   overflow-wrap: anywhere;
 }
 button,
@@ -61,17 +48,21 @@ textarea {
   font: inherit;
 }
 button {
-  border: 1px solid var(--forest);
-  border-radius: 6px;
+  border: 1px solid var(--lavender);
+  border-radius: 8px;
   padding: 8px 16px;
-  background: var(--forest);
-  color: white;
+  background: var(--lavender);
+  color: var(--on-lavender);
+  font-weight: 600;
   cursor: pointer;
+}
+button:hover {
+  background: var(--lavender-hover);
 }
 button.secondary,
 nav button {
   background: transparent;
-  color: var(--forest);
+  color: var(--lavender);
 }
 button:disabled {
   opacity: 0.5;
@@ -81,10 +72,11 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--sage);
+  border: 1px solid var(--field-border);
   padding: 9px;
-  background: white;
-  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 8px;
 }
 label {
   display: block;
@@ -101,16 +93,17 @@ label.checkbox {
 .checkbox input {
   width: auto;
   margin-top: 6px;
+  accent-color: var(--lavender);
 }
 form {
   max-width: 500px;
 }
 .panel {
-  background: #fffefa;
-  border: 1px solid #c3cec5;
+  background: var(--surface);
+  border: 1px solid var(--border);
   padding: 22px;
   margin: 20px 0;
-  border-radius: 8px;
+  border-radius: 12px;
   min-width: 0;
 }
 .comparison {
@@ -122,18 +115,19 @@ form {
   margin: 0;
 }
 .error {
-  background: #fae6df;
-  border-left: 4px solid #9c3927;
+  background: var(--danger-surface);
+  border-left: 4px solid var(--danger);
   padding: 16px;
   overflow-wrap: anywhere;
 }
 .notice {
-  background: #e0ecdf;
+  background: var(--surface-raised);
+  border-left: 4px solid var(--lavender);
   padding: 16px;
   overflow-wrap: anywhere;
 }
 .muted {
-  color: #4c594f;
+  color: var(--muted);
 }
 .actions,
 .filters,
@@ -153,7 +147,7 @@ nav {
 table {
   border-collapse: collapse;
   width: 100%;
-  background: #fffefa;
+  background: var(--surface);
 }
 caption {
   text-align: left;
@@ -161,7 +155,7 @@ caption {
 }
 th,
 td {
-  border-bottom: 1px solid #c3cec5;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   padding: 12px;
   vertical-align: top;
@@ -171,7 +165,7 @@ details {
 }
 summary {
   cursor: pointer;
-  color: var(--forest);
+  color: var(--lavender);
   overflow-wrap: anywhere;
 }
 .digest,
@@ -191,7 +185,7 @@ li {
   margin-bottom: 12px;
 }
 .evidence {
-  border-left: 3px solid var(--sage);
+  border-left: 3px solid var(--lavender);
   padding-left: 16px;
 }
 blockquote {
@@ -200,14 +194,14 @@ blockquote {
   overflow-wrap: anywhere;
 }
 footer {
-  border-top: 1px solid #c3cec5;
+  border-top: 1px solid var(--border);
   margin-top: 40px;
   padding-top: 20px;
-  color: #4c594f;
+  color: var(--muted);
   font-size: 14px;
 }
 :focus-visible {
-  outline: 3px solid #ad7028;
+  outline: 2px solid var(--lavender);
   outline-offset: 3px;
 }
 @media (max-width: 600px) {

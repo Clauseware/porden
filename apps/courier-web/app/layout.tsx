@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import '../../brand.css';
 import './globals.css';
 export const metadata = { title: 'Porden courier integration' };
 export default function Layout({ children }: { children: ReactNode }) {
