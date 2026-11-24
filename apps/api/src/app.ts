@@ -71,8 +71,8 @@ export function createApp(
     c.header('X-Request-Id', requestId);
     return c.json(notFoundResponse(requestId), 404);
   });
-  app.get('/healthz', (c) => c.json({ status: 'ok', role: config.role }));
-  app.get('/readyz', async (c) => {
+  app.get('/health', (c) => c.json({ status: 'ok', role: config.role }));
+  app.get('/ready', async (c) => {
     try {
       await db.ready();
       return c.json({ status: 'ready' });
