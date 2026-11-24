@@ -1,0 +1,342 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T04:37:18+00:00",
+  "title": "Design System: Porden",
+  "extensions": {
+    "colorMeta": {
+      "oxide-lavender": {
+        "role": "primary",
+        "displayName": "Oxide Lavender",
+        "canonical": "#c5a1c9",
+        "tonalRamp": [
+          "#312832",
+          "#59485a",
+          "#806983",
+          "#a789ab",
+          "#d1b4d4",
+          "#dcc7df",
+          "#e8d9e9",
+          "#f3ecf4"
+        ]
+      },
+      "oxide-lavender-hover": {
+        "role": "primary",
+        "displayName": "Oxide Lavender Hover",
+        "canonical": "#d6bcd9",
+        "tonalRamp": [
+          "#362f36",
+          "#605562",
+          "#8b7a8d",
+          "#b6a0b8",
+          "#dec9e1",
+          "#e6d7e8",
+          "#efe4f0",
+          "#f7f2f7"
+        ]
+      },
+      "on-lavender": {
+        "role": "neutral",
+        "displayName": "On Lavender",
+        "canonical": "#0c0c0e",
+        "tonalRamp": [
+          "#030304",
+          "#050506",
+          "#080809",
+          "#0a0a0c",
+          "#3d3d3e",
+          "#6d6d6e",
+          "#9e9e9f",
+          "#cececf"
+        ]
+      },
+      "near-black": {
+        "role": "neutral",
+        "displayName": "Near Black",
+        "canonical": "#0c0c0e",
+        "tonalRamp": [
+          "#030304",
+          "#050506",
+          "#080809",
+          "#0a0a0c",
+          "#3d3d3e",
+          "#6d6d6e",
+          "#9e9e9f",
+          "#cececf"
+        ]
+      },
+      "charcoal": {
+        "role": "neutral",
+        "displayName": "Charcoal",
+        "canonical": "#1a1a1f",
+        "tonalRamp": [
+          "#060608",
+          "#0c0c0e",
+          "#111114",
+          "#16161a",
+          "#48484c",
+          "#767679",
+          "#a3a3a5",
+          "#d1d1d2"
+        ]
+      },
+      "charcoal-raised": {
+        "role": "neutral",
+        "displayName": "Charcoal Raised",
+        "canonical": "#24242b",
+        "tonalRamp": [
+          "#09090b",
+          "#101013",
+          "#17171c",
+          "#1f1f25",
+          "#505055",
+          "#7c7c80",
+          "#a7a7aa",
+          "#d3d3d5"
+        ]
+      },
+      "off-white": {
+        "role": "neutral",
+        "displayName": "Off White",
+        "canonical": "#f5f5f5",
+        "tonalRamp": [
+          "#3d3d3d",
+          "#6e6e6e",
+          "#9f9f9f",
+          "#d0d0d0",
+          "#f7f7f7",
+          "#f9f9f9",
+          "#fbfbfb",
+          "#fdfdfd"
+        ]
+      },
+      "muted-ash": {
+        "role": "neutral",
+        "displayName": "Muted Ash",
+        "canonical": "#a3a3ad",
+        "tonalRamp": [
+          "#29292b",
+          "#49494e",
+          "#6a6a70",
+          "#8b8b93",
+          "#b5b5bd",
+          "#c8c8ce",
+          "#dadade",
+          "#ededef"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#2e2e36",
+        "tonalRamp": [
+          "#0c0c0e",
+          "#151518",
+          "#1e1e23",
+          "#27272e",
+          "#58585e",
+          "#828286",
+          "#ababaf",
+          "#d5d5d7"
+        ]
+      },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "#6a6a76",
+        "tonalRamp": [
+          "#1a1a1e",
+          "#303035",
+          "#45454d",
+          "#5a5a64",
+          "#888891",
+          "#a6a6ad",
+          "#c3c3c8",
+          "#e1e1e4"
+        ]
+      },
+      "danger-coral": {
+        "role": "semantic",
+        "displayName": "Danger Coral",
+        "canonical": "#ff9b94",
+        "tonalRamp": [
+          "#402725",
+          "#734643",
+          "#a66560",
+          "#d9847e",
+          "#ffafa9",
+          "#ffc3bf",
+          "#ffd7d4",
+          "#ffebea"
+        ]
+      },
+      "danger-wash": {
+        "role": "semantic",
+        "displayName": "Danger Wash",
+        "canonical": "#2a1517",
+        "tonalRamp": [
+          "#0a0506",
+          "#13090a",
+          "#1b0e0f",
+          "#241214",
+          "#554445",
+          "#7f7374",
+          "#aaa1a2",
+          "#d4d0d1"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "One hero heading per merchant or courier page; clamp(36px, 5vw, 58px)."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles in the dashboard and task consumer."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel and section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels and buttons."
+      },
+      "eyebrow": {
+        "displayName": "Eyebrow",
+        "purpose": "Uppercase lavender kicker above a display heading."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Identifiers, digests, step numbers, code."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "background 150ms",
+        "purpose": "Button hover; disabled under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "720px"
+      },
+      {
+        "name": "dashboard-narrow",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Every action that advances a handoff.",
+      "html": "<button class=\"ds-btn-primary\">Approve handoff</button>",
+      "css": ".ds-btn-primary{font:600 14px/1.4 Inter,ui-sans-serif,system-ui,sans-serif;background:var(--lavender,#c5a1c9);color:var(--on-lavender,#0c0c0e);border:1px solid var(--lavender,#c5a1c9);border-radius:8px;padding:12px 18px;cursor:pointer;transition:background .15s}.ds-btn-primary:hover{background:var(--lavender-hover,#d6bcd9)}.ds-btn-primary:focus-visible{outline:2px solid var(--lavender,#c5a1c9);outline-offset:3px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Cancel, refuse, sign out.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary{font:600 14px/1.4 Inter,ui-sans-serif,system-ui,sans-serif;background:transparent;color:var(--lavender,#c5a1c9);border:1px solid var(--field-border,#6a6a76);border-radius:8px;padding:12px 18px;cursor:pointer;transition:background .15s}.ds-btn-secondary:hover{background:var(--surface-raised,#24242b)}.ds-btn-secondary:focus-visible{outline:2px solid var(--lavender,#c5a1c9);outline-offset:3px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled form field.",
+      "html": "<label class=\"ds-label\">Merchant demo password<input class=\"ds-input\" type=\"password\"></label>",
+      "css": ".ds-label{display:block;font:600 14px Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text,#f5f5f5)}.ds-input{display:block;width:100%;margin-top:6px;font:16px Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text,#f5f5f5);background:var(--bg,#0c0c0e);border:1px solid var(--field-border,#6a6a76);border-radius:8px;padding:11px 12px}.ds-input:focus-visible{outline:2px solid var(--lavender,#c5a1c9);outline-offset:3px}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Charcoal container for a workflow step.",
+      "html": "<section class=\"ds-panel\"><h2>Your delivery case</h2><p>Sign in to prepare your case.</p></section>",
+      "css": ".ds-panel{background:var(--surface,#1a1a1f);border:1px solid var(--border,#2e2e36);border-radius:12px;padding:28px;color:var(--text,#f5f5f5);font:16px/1.6 Inter,ui-sans-serif,system-ui,sans-serif}.ds-panel h2{font-size:21px;margin:0 0 12px}"
+    },
+    {
+      "name": "Topbar",
+      "kind": "nav",
+      "refersTo": "badge",
+      "description": "Symbol, wordmark, context label and organisation badge.",
+      "html": "<header class=\"ds-topbar\"><a class=\"ds-wordmark\" href=\"#\"><svg viewBox=\"0 0 64 60\" fill=\"#c5a1c9\" height=\"28\"><path d=\"M33 0H45A19 19 0 0 1 45 38H43V14H33Z\"/><path d=\"M0 31A14 14 0 0 1 14 17H39V38H20V56A4 4 0 0 1 16 60H4A4 4 0 0 1 0 56Z\"/></svg>porden<span>/ merchant</span></a><span class=\"ds-badge\">Independent merchant</span></header>",
+      "css": ".ds-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:26px 0;border-bottom:1px solid var(--border,#2e2e36);font-family:Inter,ui-sans-serif,system-ui,sans-serif}.ds-wordmark{display:inline-flex;align-items:center;gap:10px;font-size:28px;font-weight:750;letter-spacing:-1.2px;color:var(--text,#f5f5f5);text-decoration:none}.ds-wordmark span{font-size:14px;font-weight:400;letter-spacing:0;color:var(--muted,#a3a3ad)}.ds-badge{border:1px solid var(--border,#2e2e36);background:var(--surface,#1a1a1f);color:var(--lavender,#c5a1c9);border-radius:999px;padding:4px 10px;font-size:13px;font-weight:600}"
+    },
+    {
+      "name": "Error Notice",
+      "kind": "custom",
+      "refersTo": "notice-danger",
+      "description": "Errors and refusals, always written in words.",
+      "html": "<div class=\"ds-notice-danger\" role=\"alert\">The service could not complete the request. Check the transfer before trying again.</div>",
+      "css": ".ds-notice-danger{background:var(--danger-surface,#2a1517);color:var(--danger,#ff9b94);border-left:4px solid var(--danger,#ff9b94);padding:14px;font:14px/1.6 Inter,ui-sans-serif,system-ui,sans-serif}"
+    },
+    {
+      "name": "Event Timeline",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Signature component: one lavender dot per handoff event.",
+      "html": "<ol class=\"ds-timeline\"><li>Case prepared</li><li>Merchant approved sharing</li><li>Courier accepted</li></ol>",
+      "css": ".ds-timeline{list-style:none;margin:0;padding:0 0 0 10px;font:14px/1.6 Inter,ui-sans-serif,system-ui,sans-serif;color:var(--text,#f5f5f5)}.ds-timeline li{position:relative;padding:0 0 20px 25px;border-left:1px solid var(--border,#2e2e36)}.ds-timeline li:last-child{border-left:0}.ds-timeline li:before{content:'';position:absolute;left:-4px;top:8px;width:7px;height:7px;border-radius:50%;background:var(--lavender,#c5a1c9)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Relay",
+    "overview": "Porden moves a task from one system to another and keeps a record of who approved what. The interface is a calm, near-black field where one colour, Oxide Lavender, marks every action that moves the task forward. Surfaces stay quiet so the handoff itself reads clearly: who holds the task, what was shared, what was approved, what is still unknown.",
+    "keyCharacteristics": [
+      "Dark-only (`color-scheme: dark`); no light theme.",
+      "One accent hue, Oxide Lavender, on every action that matters and on focus.",
+      "Flat tonal layering; no shadows.",
+      "Inter / system sans for everything except IDs, digests and code.",
+      "State always written in words; colour only supports it."
+    ],
+    "rules": [
+      {
+        "name": "The Lavender Means Go Rule",
+        "body": "Lavender fills only elements that move a task forward or show where the keyboard is. Never use it for decoration, large backgrounds or illustration fills inside the app.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Hard-Coded Hex Rule",
+        "body": "Components use `var(--\u2026)` tokens from `apps/brand.css`. A new colour is added there first, with its contrast checked.",
+        "section": "colors"
+      },
+      {
+        "name": "The Words Not Weights Rule",
+        "body": "Hierarchy comes from size and position. Do not add a second typeface or ultra-light weights.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Relay Rule",
+        "body": "Nothing floats. If an element needs more attention, it gets a lavender edge or fill, not a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use tokens from `apps/brand.css` and the `PordenSymbol` component from `apps/logo.tsx`.",
+      "**Do** give every action that moves a task forward the lavender primary style.",
+      "**Do** write state in words (Accepted, Refused, Outcome unknown) next to any colour.",
+      "**Do** show a visible lavender focus ring on every interactive element.",
+      "**Do** keep motion to 120-180ms state transitions and honour `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "**Don't** add a light theme or light surfaces.",
+      "**Don't** use shadows, gradients, glass or glow.",
+      "**Don't** hard-code hex values in components or inline styles (the global error pages are the only exception, because they render without the stylesheet).",
+      "**Don't** use lavender for decoration, illustration fills or large backgrounds inside the app.",
+      "**Don't** imply success from optimistic UI state; show unknown outcomes as unknown."
+    ]
+  }
+}
