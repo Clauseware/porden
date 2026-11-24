@@ -1,0 +1,19 @@
+name: Branch policy
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  main-via-dev-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require dev as the only merge source into main
+        if: github.head_ref != 'dev'
+        run: |
+          echo "::error::Pull requests into main must use dev as the head branch."
+          echo "Merge feature work into dev first, then open a dev → main pull request."
+          exit 1
