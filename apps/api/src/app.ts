@@ -15,20 +15,14 @@ import {
   errorMessages,
 } from '@porden/contracts';
 import { agentRoutes } from './agents';
-import {
-  equal,
-  sessionTools,
-  signer,
-  verifyApproval,
-  verifyReceipt,
-  type Fetcher,
-} from './security';
+import { equal, sessionTools, signer, verifyReceipt, type Fetcher } from './security';
 import { ApiError } from './application/errors';
 import { reportError } from './observability/logger';
 import { errorResponse, notFoundResponse } from './http/error-handler';
 import { requestLogging } from './http/request-logging';
 import type { Config } from './config';
 import type { store } from './db/store';
+import { createDeliveryCase } from './services/delivery-authorization';
 
 type Store = ReturnType<typeof store>;
 export function createApp(
@@ -126,8 +120,7 @@ export function createApp(
     app.get('/api/v1/case-types', (c) => c.json({ caseTypes: ['delivery_damage'], actionSchema }));
     app.post('/api/v1/cases', async (c) => {
       const args = CreateCase.parse(await c.req.json());
-      await verifyApproval(args, config, fetcher);
-      const result = await db.createCase(args);
+      const result = await createDeliveryCase(config, db, fetcher, args);
       return c.json(result, result.idempotent ? 200 : 201);
     });
     app.get('/api/v1/cases/by-request/:requestId', async (c) =>
@@ -241,7 +234,9 @@ export function createApp(
     );
     app.post('/api/v1/transfers/:id/approve', async (c) => {
       const input = ApproveTransfer.parse(await c.req.json());
-      return c.json(await db.approve(z.uuid().parse(c.req.param('id')), input.approvedFields));
+      return c.json(
+        await db.approve(z.uuid().parse(c.req.param('id')), input.approvedFields, fetcher),
+      );
     });
     app.post('/api/v1/transfers/:id/submit', async (c) =>
       c.json(await db.transition(z.uuid().parse(c.req.param('id')), 'submitted')),

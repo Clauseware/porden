@@ -5,7 +5,9 @@ import type {
   TransferStatus,
   VerifiedReceipt,
   ApproveTransfer,
+  DeliveryGovernance,
 } from '@porden/contracts';
+import type { z } from 'zod';
 
 export const transfers = pgTable(
   'transfers',
@@ -16,6 +18,7 @@ export const transfers = pgTable(
     recipientOrigin: text('recipient_origin').notNull(),
     caseType: text('case_type').$type<'delivery_damage'>().notNull(),
     draftData: jsonb('draft_data').$type<DamageData>().notNull(),
+    governance: jsonb('governance').$type<z.infer<typeof DeliveryGovernance>>(),
     approvedData: jsonb('approved_data').$type<DamageData>(),
     status: text('status').$type<TransferStatus>().notNull().default('draft'),
     approvedFields: text('approved_fields')

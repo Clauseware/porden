@@ -10,9 +10,12 @@ import {
   type CreateDraft,
   type ApproveTransfer,
   type CreateCase,
+  type DeliveryGovernance,
 } from '@porden/contracts';
+import type { z } from 'zod';
 import { ApiError } from '../application/errors';
-import { hash, type signer } from '../security';
+import { hash, type signer, type Fetcher } from '../security';
+import { verifyDeliveryConsent } from '../services/delivery-authorization';
 import type { Config } from '../config';
 import { transfers, transferEvents } from './merchant-schema';
 import { cases, receipts, shipments } from './courier-schema';
@@ -36,6 +39,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       recipientOrigin: row.recipientOrigin,
       caseType: row.caseType,
       data: row.draftData,
+      ...(row.governance ? { governance: row.governance } : {}),
       status: row.status,
       approvedFields: row.approvedFields,
       receipt: row.verifiedReceipt,
@@ -73,6 +77,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           recipientOrigin: input.recipientOrigin,
           caseType: input.caseType,
           draftData: input.data,
+          governance: input.governance,
         })
         .returning();
       return draft(row);
@@ -85,7 +90,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return draft(row);
     },
-    async approve(id: string, fields: ApproveTransfer['approvedFields']) {
+    async approve(id: string, fields: ApproveTransfer['approvedFields'], fetcher: Fetcher = fetch) {
       return db.transaction(async (tx) => {
         const row = await owned(tx, id);
         if (row.status !== 'draft') throw new ApiError('REQUEST_CONFLICT', 409);
@@ -100,6 +105,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         };
         const payloadSha256 = hash(data),
           expiresAt = Date.now() + 10 * 60 * 1000;
+        if (row.governance) await verifyDeliveryConsent(config, fetcher, row.governance, data);
         const approval = signing.sign(
           {
             issuer: config.origin,
@@ -110,6 +116,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             payloadSha256,
             approvedFields: fields,
             expiresAt,
+            ...(row.governance ? { governance: row.governance } : {}),
           },
           'porden-approval+jwt',
         );
@@ -171,6 +178,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           claims.audience !== config.origin ||
           claims.caseType !== row.caseType ||
           claims.payloadSha256 !== row.payloadSha256 ||
+          hash(claims.governance ?? null) !== hash(row.governance ?? null) ||
           hash([...claims.approvedFields].sort()) !== hash([...row.approvedFields].sort())
         )
           throw new ApiError('RECEIPT_INVALID', 403);
@@ -197,7 +205,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         return receipt;
       });
     },
-    async createCase(args: CreateCase) {
+    async createCase(args: CreateCase, governance?: z.infer<typeof DeliveryGovernance>) {
       return db.transaction(async (tx) => {
         // Serialize a transfer across differing runtime request IDs as well as exact replays.
         await tx.execute(
@@ -208,6 +216,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           requestId: args.requestId,
           caseType: args.caseType,
           data: args.data,
+          ...(governance ? { governance } : {}),
         });
         const existing = await tx
           .select({ case: cases, receipt: receipts })
@@ -251,6 +260,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             approvedFields: Object.keys(args.data),
             status: 'accepted',
             receivedAt,
+            ...(governance ? { governance } : {}),
           },
           'porden-receipt+jwt',
         );

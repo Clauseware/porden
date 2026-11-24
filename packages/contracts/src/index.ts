@@ -15,7 +15,8 @@ export const Field = z.enum(['orderReference', 'damageDescription', 'deliveryAdd
 export const Fields = z.array(Field).min(2).max(3).refine(fields =>
   new Set(fields).size === fields.length && fields.includes('orderReference') && fields.includes('damageDescription'));
 export const TransferStatus = z.enum(['draft', 'approved', 'submitted', 'accepted', 'rejected', 'cancelled', 'unknown']);
-export const CreateDraft = z.strictObject({recipientOrigin: Origin, caseType: z.literal('delivery_damage'), data: DamageData});
+export const DeliveryGovernance = z.strictObject({handoffId: z.uuid(), version: z.number().int().positive()});
+export const CreateDraft = z.strictObject({recipientOrigin: Origin, caseType: z.literal('delivery_damage'), data: DamageData, governance: DeliveryGovernance.optional()});
 export const ApproveTransfer = z.strictObject({approvedFields: Fields});
 export const ActionArguments = z.strictObject({
   transferId: z.uuid(), caseType: z.literal('delivery_damage'), data: DamageData,
@@ -27,11 +28,13 @@ export const ReceiptClaims = z.strictObject({
   caseId: z.string().min(1), receiptId: z.uuid(), caseType: z.literal('delivery_damage'),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/), approvedFields: Fields,
   status: z.literal('accepted'), receivedAt: z.iso.datetime(),
+  governance: DeliveryGovernance.optional(),
 });
 export const ApprovalClaims = z.strictObject({
   issuer: Origin, audience: Origin, transferId: z.uuid(), subject: z.literal('demo-user'),
   caseType: z.literal('delivery_damage'), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
   approvedFields: Fields, expiresAt: z.number().int().positive(),
+  governance: DeliveryGovernance.optional(),
 });
 export const CaseResponse = z.strictObject({
   caseId: z.string(), receiptId: z.uuid(), receipt: z.string(), requestId: z.string(),

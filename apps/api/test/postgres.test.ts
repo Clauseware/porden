@@ -138,7 +138,7 @@ integration(
       const [row] = await client`SELECT draft_data FROM transfers WHERE id=${id}`;
       expect(row.draft_data).toEqual(data);
       const [journal] = await client`SELECT count(*)::int AS count FROM __drizzle_migrations`;
-      expect(journal.count).toBe(1);
+      expect(journal.count).toBe(2);
       await expect(migrate(client, 'courier')).rejects.toThrow(
         'Database belongs to the other organization role',
       );

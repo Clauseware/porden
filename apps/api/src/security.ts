@@ -126,6 +126,7 @@ export async function verifyApproval(args: CreateCase, config: Config, fetcher: 
     hash([...approval.approvedFields].sort()) !== hash(Object.keys(args.data).sort())
   )
     throw new ApiError('CONSENT_SCOPE_MISMATCH', 403);
+  return approval;
 }
 export async function verifyReceipt(input: ReceiptSubmission, config: Config, fetcher: Fetcher) {
   const parsed = ReceiptClaims.safeParse(
