@@ -1,16 +1,16 @@
 # Porden — Brand Guidelines
 
-**Status:** Brand direction approved; logo and tagline remain concepts.  
-**Version:** 0.1 · 23 November 2026
+**Status:** Brand identity sheet adopted (Oxide Lavender, dark-only). Final logo vectors and trademark clearance remain open.
+**Version:** 0.2 · 24 November 2026
 
 ## 1. Brand foundation
 
-**Name:** Porden  
-**Pronunciation:** POR-den  
+**Name:** Porden
+**Pronunciation:** POR-den
 **Category:** Developer infrastructure for reliable AI-agent and human handoffs.
 
 ### Product description
-Porden helps developers hand off tasks between AI agents and people while preserving context, decisions, and progress. It is designed as an API/SDK-first product that can integrate with existing systems, with a web interface for visibility and management.
+Porden helps developers transfer tasks between independent systems while preserving context, approvals, responsibilities, and evidence. It is an API/SDK-first product that integrates with existing systems, with a web interface for visibility and management.
 
 ### Positioning
 Infrastructure for accountable handoffs in AI-powered workflows.
@@ -19,97 +19,73 @@ Infrastructure for accountable handoffs in AI-powered workflows.
 > Porden helps AI agents hand off tasks while keeping the context, decisions, and progress intact. It makes it easier for developers to build reliable workflows across agents and humans.
 
 ### Brand attributes
-- **Grounded:** clear, useful, and trustworthy.
-- **Crafted:** carefully considered details and precise interactions.
-- **Human:** readable language and approachable interfaces.
-- **Quietly technical:** engineering credibility without sci-fi imagery.
+- **Reliable:** behaves the same way every time and says so when it does not know.
+- **Continuous:** context and responsibility carry across every handoff.
+- **Verifiable:** approvals and evidence are records, not claims.
+- **Open:** plain contracts, readable SDKs, nothing hidden behind jargon.
+- **Thoughtful:** carefully considered details and precise interactions.
 
 ### Naming and verbal identity
 - Product name: **Porden**, with an initial capital in prose.
-- Lowercase **porden** is appropriate for the wordmark, package naming, and command-line references.
+- Lowercase **porden** is used for the wordmark, package naming, and command-line references.
 - Prefer concrete words: task, owner, context, evidence, decision, history, handoff.
 - Avoid inflated claims such as “autonomous intelligence revolution” or “zero-error agents.”
-- Working tagline: **Pass with confidence.** This is provisional and must not imply a security or reliability guarantee.
+- Tagline: **Pass with confidence.** The full stop is part of the lockup. It must not imply a security or reliability guarantee.
 
 ## 2. Color system
 
-### Approved foundation: Forest & Paper
+### Approved palette: Oxide Lavender (dark-only)
 
 | Token | Hex | Role |
 |---|---|---|
-| Forest | `#0F3D2E` | Primary brand, primary actions, dark brand surfaces |
-| Sage | `#4E7C66` | Supporting accents, diagrams, secondary highlights |
-| Paper | `#F6F4EB` | Primary warm page background |
-| Ink | `#1F1F1F` | Main text, strong contrast, dark UI surfaces |
+| Oxide Lavender | `#C5A1C9` | Primary: logo symbol, primary actions, links, focus |
+| Near Black | `#0C0C0E` | Background; text on lavender |
+| Charcoal | `#1A1A1F` | Surfaces: panels, cards, tables |
+| Off White | `#F5F5F5` | Text |
 
-### Extended UI palette (proposed, subject to accessibility testing)
-
-| Token | Hex | Use |
-|---|---|---|
-| Canvas | `#F6F4EB` | Page background |
-| Surface | `#FFFEFA` | Cards, panels, popovers |
-| Surface muted | `#EEEEE5` | Subtle grouping |
-| Border | `#D9DED4` | Dividers and component outlines |
-| Text primary | `#1F1F1F` | Body and headings |
-| Text secondary | `#56615B` | Supporting labels |
-| Forest hover | `#174F3B` | Hover on brand-colored surfaces |
-| Forest pressed | `#0B3024` | Pressed interaction |
-| Focus | `#35785C` | Focus indicator, with adequate contrast and offset |
-| Inverse text | `#F6F4EB` | Text on Forest/Ink |
-
-Semantic states should use explicit text and icons alongside color. Proposed tones: success `#276749`, warning `#946200`, danger `#A33A35`, information `#315D87`. Validate all foreground/background combinations before implementation; these are starting tokens, not certified accessible pairings.
+The interface has no light theme. Implementation tokens, including hover, muted text, borders and danger tones, live in `apps/brand.css` and are documented with measured contrast in [DESIGN.md](./DESIGN.md).
 
 ### Color usage
-- Default to Paper backgrounds with Ink text.
-- Use Forest for primary calls to action and select brand moments.
-- Use Sage sparingly for supporting elements and illustrations.
-- Prefer subtle borders and spacing to large tinted containers.
-- Code blocks and technical demos may use Ink or deep Forest surfaces.
-- Keep a single strong accent per screen where possible.
-
-### Dark theme (proposed)
-
-| Token | Hex |
-|---|---|
-| Background | `#171C19` |
-| Surface | `#222A25` |
-| Border | `#39463D` |
-| Text | `#F3F3EC` |
-| Muted text | `#B8C4B9` |
-| Accent | `#91B69B` |
-
-Use light and dark themes as intentional compositions. Avoid direct inversion of the light palette.
+- Default to Near Black backgrounds, Charcoal surfaces and Off White text.
+- Use Oxide Lavender on every action that moves a task forward, and on focus.
+- Never use lavender as decoration, a large background inside the app, or a gradient.
+- Semantic states use written text first; colour only supports it.
+- The full lavender field is reserved for the reverse logo lockup and brand moments outside the app (covers, stickers, app icon).
 
 ## 3. Logo identity
 
-### Creative direction
-A restrained geometric mark that suggests transfer, continuity, or two parties connecting. Pair it with a carefully spaced lowercase **porden** wordmark.
+### Symbol
+A geometric “P” built from two offset blocks: a bowl that passes over a stem. It reads as one party handing something to the next. The selected form is “4. Final” on the brand identity sheet; earlier explorations (Base P, Bridge, Connect) are retired.
 
-### Logo variants to develop
-1. Primary horizontal lockup: symbol + lowercase wordmark.
-2. Wordmark-only version for headers and documentation.
-3. Symbol-only version for favicon, avatars, and small app icons.
-4. Single-color versions in Forest, Ink, and Paper.
+### Lockups
+1. **Primary:** lavender symbol, off-white lowercase **porden** wordmark, optional tagline below. On Near Black.
+2. **Reverse:** near-black symbol and wordmark on an Oxide Lavender field.
+3. **Wordmark only:** off-white **porden**, for docs headers and tight spaces.
+4. **Symbol only:** favicon, avatars, app icon.
+5. **Single colour:** all white on dark; all black on white or light material.
+
+### Small sizes
+- App icon (512 × 512): near-black symbol on a rounded lavender tile.
+- Favicon (32 × 32): same tile, symbol simplified if needed.
+- 16 × 16: symbol alone, no tile.
 
 ### Construction rules
-- Prioritize recognition at 16–24 px.
-- Use simple geometry and deliberate negative space.
-- Ensure the mark works without gradients, shadows, or animation.
-- Keep sufficient clear space, provisionally equal to the height of the wordmark's lowercase `o` on all sides.
+- The mark works without gradients, shadows, or animation.
+- Keep clear space at least equal to the height of the wordmark's lowercase `o` on all sides.
 - Avoid literal robot heads, sparkles, circuit brains, and generic infinity loops.
 
-**Important:** The previously generated two-part directional symbol is an exploration, not a finalized or trademark-cleared logo. Final vectors, clear-space measurements, and minimum sizes must be established after selection.
+**Important:** `apps/logo.tsx` and `app/icon.svg` contain a hand-drawn approximation of the selected symbol. Replace them with official vectors once they exist. Trademark clearance is not done.
 
 ## 4. Typography
 
-### Proposed type stack
-- **Interface and marketing:** Geist or Inter. Choose one after visual testing; Inter is a safe initial implementation.
-- **Code and technical metadata:** IBM Plex Mono.
-- **Fallback:** system sans-serif / monospace.
+### Type stack
+- **Wordmark and display:** the brand sheet uses a bold geometric sans. The final typeface and its licence are not chosen; the code uses Inter until then.
+- **Interface:** Inter, falling back to system sans-serif.
+- **Code and technical metadata:** system monospace (`ui-monospace`, SFMono-Regular).
 
 ### Hierarchy principles
-- Strong headings with compact line heights.
-- Readable body text, typically 16–18 px on marketing pages and 14–16 px in dense application views.
+- Strong headings with compact line heights and slight negative tracking.
+- Readable body text: 16 px in the apps, 16–18 px on marketing pages.
 - Avoid ultra-light weights and decorative display fonts.
 - Use monospaced type for IDs, code, timestamps, and structured evidence, not entire paragraphs.
 
@@ -117,10 +93,9 @@ A restrained geometric mark that suggests transfer, continuity, or two parties c
 
 ### Preferred
 - Clear flow diagrams showing task movement and ownership.
-- Technical-manual-inspired linework and restrained annotations.
+- Technical-manual-inspired linework and restrained annotations on dark grounds.
 - Real interface captures and code examples.
-- Subtle print texture in marketing compositions when it does not impair legibility.
-- Geometric forms drawn from the final logo system.
+- Geometric forms drawn from the symbol's two blocks.
 
 ### Avoid
 - Glowing AI orbs, robot mascots, and stock neural-network illustrations.
@@ -132,34 +107,37 @@ A restrained geometric mark that suggests transfer, continuity, or two parties c
 
 Porden speaks plainly. Lead with what developers can do and what happens to a task when ownership changes.
 
-**Example homepage heading:**  
+**Example homepage heading:**
 “Hand off work. Keep the context.”
 
-**Supporting copy:**  
+**Supporting copy:**
 “Porden helps agents and people pass tasks along with the information needed to continue.”
 
-**CTA ideas:** “Read the docs”, “Explore the API”, “See a handoff”.
+**CTA ideas:** “Get started”, “Read the docs”, “See a handoff”.
 
 Avoid claiming guaranteed delivery, perfect traceability, or complete accountability until the implementation supports those promises.
 
 ## 7. Brand applications
 
 ### Website
-Paper background, confident typography, Forest highlights, interactive handoff examples, real documentation excerpts.
+Near Black page, primary lockup in the nav, links Product · Docs · GitHub, and a lavender “Get started” button. Interactive handoff examples and real documentation excerpts.
 
 ### Documentation
-Navigation-first layout, high legibility, copyable snippets, restrained syntax highlighting, clear API contracts.
+Dark, navigation-first layout: wordmark at the top of the sidebar, active page marked with a lavender tint, high-legibility body text, copyable snippets, restrained syntax highlighting.
 
 ### SDK / CLI
 Simple, predictable naming and human-readable errors. `@porden/sdk` is a **proposed** package name; package scope availability is unverified.
 
 ### Social / GitHub
-Use the symbol-only logo on Forest or Paper. Keep cover imagery typographic and product-led.
+Symbol-only logo on Oxide Lavender or Near Black. Keep cover imagery typographic and product-led.
+
+### Merchandise
+Stickers use the reverse lockup (black symbol and wordmark on lavender) with a white die-cut border.
 
 ## 8. Brand governance and open decisions
 
-**Decided:** Porden name as working product brand; Forest & Paper palette; grounded developer-tool aesthetic; light-first interface.
+**Decided:** Porden name as working product brand; Oxide Lavender dark-only palette; symbol “4. Final”; tagline “Pass with confidence.”; developer-tool aesthetic.
 
-**To validate:** trademark and domain clearance; package/organization availability; final logo originality; exact typeface licensing; WCAG contrast; final tagline; dark theme; illustrations and motion.
+**To validate:** official logo vectors; display typeface and licence; trademark and domain clearance; package/organization availability.
 
-Keep `design.md` as the implementation companion to these brand guidelines. Update both when visual decisions are approved.
+Keep [DESIGN.md](./DESIGN.md) as the implementation companion to these brand guidelines. Update both when visual decisions change.
