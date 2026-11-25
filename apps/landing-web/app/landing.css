@@ -708,32 +708,16 @@ pre {
 
 /* tablet and phone */
 @media (min-width: 1024px) {
-  .steps {
-    gap: var(--s-8);
-  }
-}
-/* The step cards stack as you scroll, and each earlier card keeps its number and title in view.
-   Each step sits 120px lower than the last. The stack needs about 940px of viewport height to fit
-   all three; on shorter windows the cards flow normally with the gap above. */
-@media (min-width: 1024px) and (min-height: 940px) {
-  /* Room after the last card, so card 1 stays pinned until card 3 has joined the stack. A sticky
-     card can only move inside the grid content box, so this is an empty grid item, not padding. */
-  .steps::after {
-    content: '';
-    height: calc(var(--s-8) * 2);
-  }
+  /* The step cards stack as you scroll, each a little lower than the last. */
   .step {
     position: sticky;
-    top: calc(88px + var(--i) * 120px);
+    top: calc(96px + var(--i) * 20px);
   }
   .step:nth-child(1) {
     --i: 0;
   }
   .step:nth-child(2) {
     --i: 1;
-    /* Card 1 is taller than card 2, so its lower part would show in the gap under card 2. This
-       paints the page colour there. It is a mask, not a visible shadow. */
-    box-shadow: 0 240px 0 0 var(--bg);
   }
   .step:nth-child(3) {
     --i: 2;
