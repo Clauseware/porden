@@ -6,6 +6,9 @@
 // popup action bridge and cross-site peer loading are NOT exercised here.
 //
 // Usage: bun tests/claims_live_eval.ts [--runs 20] [--model <id>] [--resume <evidence dir>]
+//   [--openrouter-fault 429|503|network --openrouter-fault-after <n>]
+// The fault options make OpenRouter fail after <n> successful calls, exercising the Groq fallback
+// (GROQ_API_KEY and GROQ_MODEL) in the middle of active sessions.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -30,12 +33,29 @@ const { Engine } = await import(`${runtime}/engine.js`);
 const { actionBindings } = await import(`${runtime}/actions.js`);
 const actionModule = await import(pathToFileURL(resolve('apps/api/public/actions.js')).href);
 
+const fault = option('--openrouter-fault', '');
+const faultAfter = Number(option('--openrouter-fault-after', '0'));
+if (fault && !['429', '503', 'network'].includes(fault)) throw Error('--openrouter-fault must be 429, 503 or network');
+const upstreamCalls = { openrouter: 0, groq: 0, injectedFaults: 0 };
 const realFetch = globalThis.fetch;
 const stack = await startClaimsStack({
   url,
-  env: { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, OPENROUTER_MODEL: model },
-  upstream: (input, init) => {
-    if (new URL(String(input)).origin !== 'https://openrouter.ai') throw Error('Unexpected upstream');
+  env: {
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_MODEL: model,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
+    GROQ_MODEL: process.env.GROQ_MODEL,
+  },
+  upstream: async (input, init) => {
+    const origin = new URL(String(input)).origin;
+    if (origin === 'https://api.groq.com') return (upstreamCalls.groq += 1), realFetch(input, init);
+    if (origin !== 'https://openrouter.ai') throw Error('Unexpected upstream');
+    upstreamCalls.openrouter += 1;
+    if (fault && upstreamCalls.openrouter > faultAfter) {
+      upstreamCalls.injectedFaults += 1;
+      if (fault === 'network') throw new TypeError('Simulated OpenRouter connection failure');
+      return new Response('simulated', { status: Number(fault), headers: { 'Retry-After': '5' } });
+    }
     return realFetch(input, init);
   },
 });
@@ -45,7 +65,7 @@ for (const role of ['merchant', 'courier'] as const) {
   const tools = sessionTools(stack.configs[role]);
   sessions[role] = tools.issue();
 }
-let modelCalls: Array<{ role: Role; ms: number; status: number; usage?: unknown }> = [];
+let modelCalls: Array<{ role: Role; ms: number; status: number; usage?: unknown; servedBy?: string }> = [];
 function setLocation(role: Role) {
   Object.defineProperty(globalThis, 'location', {
     value: new URL(origins[role] + '/'),
@@ -74,17 +94,19 @@ globalThis.fetch = Object.assign(
     if (target.pathname === '/api/llm/chat/completions') {
       const text = await response.text();
       let usage: unknown;
-      // Read token usage from the event stream when the provider reports it.
+      let servedBy: string | undefined;
+      // Read token usage and the serving model from the event stream when the provider reports them.
       for (const line of text.split('\n')) {
         if (!line.startsWith('data: {')) continue;
         try {
           const chunk = JSON.parse(line.slice(6));
           if (chunk.usage) usage = chunk.usage;
+          if (typeof chunk.model === 'string') servedBy = chunk.model;
         } catch {
           // Partial or non-JSON stream lines carry no usage.
         }
       }
-      modelCalls.push({ role, ms: performance.now() - started, status: response.status, usage });
+      modelCalls.push({ role, ms: performance.now() - started, status: response.status, usage, servedBy });
       return new Response(text, { status: response.status, headers: response.headers });
     }
     return response;
@@ -349,6 +371,8 @@ const calls = results.flatMap((item) => item.modelCalls);
 const usage = calls.filter((item) => item.usage);
 const summary = {
   model,
+  fault: fault ? { mode: fault, after: faultAfter, ...upstreamCalls } : undefined,
+  servedBy: Object.fromEntries([...new Set(calls.map((item) => item.servedBy ?? 'unknown'))].map((name) => [name, calls.filter((item) => (item.servedBy ?? 'unknown') === name).length])),
   notAttempted,
   ...(resumeFrom ? { resumedFrom: resumeFrom, pendingRateLimited: [...results.filter(rateLimited).map((item) => item.run), ...notAttempted] } : {}),
   runs: results.length,

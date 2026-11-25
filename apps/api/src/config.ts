@@ -50,6 +50,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       platform.organizationId === platform.peerOrganizationId)
   )
     throw new Error('Invalid platform integration configuration');
+  // Groq is the fallback for the OpenRouter model route.
+  const groq = { key: required('GROQ_API_KEY'), model: required('GROQ_MODEL') };
   return {
     role,
     host: env.HOST || '127.0.0.1',
@@ -70,5 +72,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     runtimePath: resolve(env.NSDEPLOY_RUNTIME_PATH || 'vendor/nsdeploy/nsdeploy/runtime'),
     openrouterKey: env.OPENROUTER_API_KEY || env.openrouter_api_key || '',
     model: env.OPENROUTER_MODEL || env.openrouter_model || '',
+    groq,
   } as const;
 }

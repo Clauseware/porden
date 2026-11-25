@@ -17,7 +17,14 @@ async function main() {
     if (!(await Bun.file(`${config.runtimePath}/engine.js`).exists()))
       throw Error('Pinned official nsDeploy runtime missing');
     const app = createApp(config, db, signing);
-    const server = Bun.serve({ hostname: config.host, port: config.port, fetch: app.fetch });
+    // The model route may wait up to 20 s for OpenRouter and 60 s for a Groq rate limit before
+    // sending a byte; Bun's default 10 s idle timeout would drop that connection.
+    const server = Bun.serve({
+      hostname: config.host,
+      port: config.port,
+      idleTimeout: 120,
+      fetch: app.fetch,
+    });
     console.log(
       `Porden ${config.role} API on http://${config.host}:${server.port}; public origin ${config.origin}`,
     );
