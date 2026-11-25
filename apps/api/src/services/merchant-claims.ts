@@ -1,5 +1,7 @@
 import { Fields, type HandoffDetail, type ReceiptClaims } from '@porden/contracts';
+import { PordenError } from '@porden/sdk';
 import type {
+  ClaimConsent,
   ClaimView,
   FileClaim,
   OrderFacts,
@@ -7,6 +9,7 @@ import type {
   Resolution,
 } from '@porden/contracts/delivery-claims';
 import type { Config } from '../config';
+import type { store } from '../db/store';
 import { ApiError } from '../application/errors';
 import { canonicalize } from '@porden/contracts';
 import { hash, type Fetcher } from '../security';
@@ -51,11 +54,79 @@ function view(state: HandoffDetail): ClaimView {
   return { handoff: state, versions, current: current.parameters };
 }
 
+// How long an unlinked filing waits before the sweep asks the platform for its final outcome.
+const STALE_AFTER_MS = 10 * 60_000;
+
+// A claim whose case can no longer be sent: it closed, or the accepted version was carried out.
+const CLOSED = new Set(['completed', 'failed', 'rejected', 'cancelled']);
+function settled(state: HandoffDetail) {
+  return (
+    CLOSED.has(state.status) ||
+    state.executions.some(
+      (item) => item.version === state.acceptedVersion && item.status === 'completed',
+    )
+  );
+}
+
+type ClaimRecords = Pick<
+  ReturnType<typeof store>,
+  | 'reserveClaim'
+  | 'findPendingClaim'
+  | 'bindClaim'
+  | 'discardPendingClaim'
+  | 'stalePendingClaims'
+  | 'findClaim'
+  | 'clearClaimConsent'
+  | 'listClaims'
+>;
+
 // Merchant side of the damaged-parcel example. The integration token stays on this server and
 // only these operations are exposed to the signed-in customer.
-export function merchantClaims(config: Config, fetcher: Fetcher) {
+export function merchantClaims(config: Config, fetcher: Fetcher, records: ClaimRecords) {
   const { client, handoff } = deliveryPlatform(config, fetcher);
   const load = (handoffId: string) => handoff({ handoffId }).catch(authorizationFailure);
+  const consentHash = (data: ClaimConsent['data']) => hash({ caseType: 'delivery_damage', data });
+  /**
+   * Links a stored filing to the claim a reconciled operation created, so an uncertain filing
+   * keeps its consent. Only a claim whose version-1 terms carry this consent's hash is linked.
+   */
+  async function attach(requestId: string, state: HandoffDetail) {
+    const pending = await records.findPendingClaim(requestId);
+    if (!pending?.consentData) return false;
+    const first = state.versions.find((item) => item.version === 1);
+    const claim = first ? readClaimTerms(first.terms) : undefined;
+    if (claim?.caseScope.parametersSha256 !== consentHash(pending.consentData)) return false;
+    await records.bindClaim(requestId, state.id);
+    return true;
+  }
+  /**
+   * Settles filings left unlinked by a lost answer that nobody checked. The platform records a
+   * filing's operation in the same transaction as the claim, and a filing call gives up after
+   * five seconds, so after STALE_AFTER_MS the platform's answer is final: a claim made from this
+   * consent is linked; otherwise nothing used the consent and it is deleted. While the platform
+   * can't be reached, the filing is left for the next sweep.
+   */
+  async function sweep() {
+    const cutoff = new Date(Date.now() - STALE_AFTER_MS);
+    const stale = await records.stalePendingClaims(cutoff, 20);
+    for (const { requestId } of stale) {
+      const found = await client.reconcileOperation(requestId).then(
+        (result) => ({ state: 'found' as const, handoff: result.handoff }),
+        (cause: unknown) => {
+          if (cause instanceof PordenError && cause.status === 404)
+            return { state: 'missing' as const };
+          if (cause instanceof PordenError) return { state: 'unreachable' as const };
+          throw cause;
+        },
+      );
+      if (found.state === 'unreachable') continue;
+      const linked =
+        found.state === 'found' &&
+        found.handoff.receiverOrganizationId === config.platform?.peerOrganizationId &&
+        (await attach(requestId, found.handoff));
+      if (!linked) await records.discardPendingClaim(requestId, cutoff);
+    }
+  }
   return {
     async file(input: FileClaim) {
       const fields = Fields.safeParse(input.approvedFields);
@@ -81,17 +152,53 @@ export function merchantClaims(config: Config, fetcher: Fetcher) {
         },
         {
           action: caseAction,
-          parametersSha256: hash({ caseType: 'delivery_damage', data: input.data }),
+          parametersSha256: consentHash(input.data),
         },
       );
+      // The consent is stored before the platform call, so it survives an uncertain outcome and
+      // can be linked when the filing is reconciled. The platform keeps only its hash.
+      const { requestId, ...request } = input;
+      const reserved = await records.reserveClaim(requestId, hash(request), {
+        data: input.data,
+        approvedFields: fields.data,
+      });
+      if (!reserved || reserved.requestSha256 !== hash(request))
+        throw new ApiError('REQUEST_CONFLICT', 409);
       const result = await client
-        .createHandoff({
-          requestId: input.requestId,
-          receiverOrganizationId: platform.peerOrganizationId,
-          terms,
-        })
+        // On any failure the stored consent stays: an uncertain outcome is linked when it is
+        // reconciled, and a filing that created nothing is removed by the stale-filing sweep.
+        .createHandoff({ requestId, receiverOrganizationId: platform.peerOrganizationId, terms })
         .catch(authorizationFailure);
+      await records.bindClaim(requestId, result.handoff.id);
       return view(result.handoff);
+    },
+    async list() {
+      await sweep();
+      const rows = await records.listClaims(50);
+      return {
+        items: rows.flatMap((row) =>
+          row.handoffId
+            ? [
+                {
+                  handoffId: row.handoffId,
+                  orderReference: row.orderReference,
+                  filedAt: row.filedAt.toISOString(),
+                },
+              ]
+            : [],
+        ),
+      };
+    },
+    /** The consented details, while the case can still be sent. Cleared once it no longer can. */
+    async consent(handoffId: string): Promise<{ consent: ClaimConsent | null }> {
+      const record = await records.findClaim(handoffId);
+      if (!record) throw new ApiError('NOT_FOUND', 404);
+      if (!record.consentData || !record.approvedFields) return { consent: null };
+      if (settled(await load(handoffId))) {
+        await records.clearClaimConsent(handoffId);
+        return { consent: null };
+      }
+      return { consent: { data: record.consentData, approvedFields: record.approvedFields } };
     },
     async read(handoffId: string) {
       return view(await load(handoffId));
@@ -106,6 +213,7 @@ export function merchantClaims(config: Config, fetcher: Fetcher) {
     async cancel(handoffId: string, input: { requestId: string; version: number }) {
       view(await load(handoffId));
       const result = await client.cancelHandoff(handoffId, input).catch(authorizationFailure);
+      if (settled(result.handoff)) await records.clearClaimConsent(handoffId);
       return view(result.handoff);
     },
     /** Read-only lookup of an uncertain write by its request ID; never repeats the write. */
@@ -115,6 +223,7 @@ export function merchantClaims(config: Config, fetcher: Fetcher) {
       if (result.handoff.receiverOrganizationId !== config.platform?.peerOrganizationId)
         throw new ApiError('NOT_FOUND', 404);
       view(result.handoff);
+      await attach(requestId, result.handoff);
       return result;
     },
     /** A courier receipt for a claim must state the resolution of the version it executed. */

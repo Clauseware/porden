@@ -72,6 +72,16 @@ export const FileClaim = z.strictObject({
   requestedResolution: RequestedResolution,
 });
 export type FileClaim = z.infer<typeof FileClaim>;
+/** The exact details the customer consented to share, held by the merchant until the case is sent. */
+export const ClaimConsent = z.strictObject({data: FileClaim.shape.data, approvedFields: FileClaim.shape.approvedFields});
+export type ClaimConsent = z.infer<typeof ClaimConsent>;
+/** `consent` is null once the case was sent or the claim closed: the details are no longer kept. */
+export const ClaimConsentResponse = z.strictObject({consent: ClaimConsent.nullable()});
+/** The signed-in customer's own claims, newest first. Status is read per claim. */
+export const MerchantClaimList = z.strictObject({
+  items: z.array(z.strictObject({handoffId: z.uuid(), orderReference: z.string(), filedAt: z.iso.datetime()})),
+});
+export type MerchantClaimList = z.infer<typeof MerchantClaimList>;
 export const ResolveClaimClarification = z.strictObject({
   requestId: z.uuid(), version: z.number().int().positive(), clarificationId: z.uuid(),
   response: z.string().trim().min(1).max(4000),

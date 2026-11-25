@@ -1,16 +1,19 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { CreateCase, type HandoffDetail } from '@porden/contracts';
 import {
+  ClaimConsentResponse,
   ClaimEvaluation,
   ClaimInbox,
   ClaimView,
   ExecutionRecovery,
+  MerchantClaimList,
   type CourierClaimDecision,
   type FileClaim,
 } from '@porden/contracts/delivery-claims';
 import type { Config } from '../src/config';
 import { createApp } from '../src/app';
 import { courierClaims } from '../src/services/courier-claims';
+import { merchantClaims } from '../src/services/merchant-claims';
 import { sessionTools, signer, type Fetcher } from '../src/security';
 import { origins, startClaimsStack, type ClaimsStack } from './claims-stack';
 
@@ -718,5 +721,252 @@ integration(
       tools: [],
       tool_choice: 'auto',
     });
+  },
+);
+
+const consentOf = async (id: string) =>
+  ClaimConsentResponse.parse(
+    await json(await site('merchant', 'GET', `/api/v1/claims/${id}/consent`)),
+  ).consent;
+
+integration(
+  'Consent: the merchant keeps the consented details until the case is sent, and lists claims',
+  async () => {
+    const claim = await fileClaim(partial(4_000));
+    const id = claim.handoff.id;
+    const list = MerchantClaimList.parse(
+      await json(await site('merchant', 'GET', '/api/v1/claims')),
+    );
+    expect(list.items[0]).toMatchObject({ handoffId: id, orderReference: 'DEMO-1042' });
+    expect(await consentOf(id)).toEqual({
+      data,
+      approvedFields: ['orderReference', 'damageDescription'],
+    });
+    // A claim this customer did not file here is not readable through the consent route.
+    expect(
+      (await site('merchant', 'GET', `/api/v1/claims/${crypto.randomUUID()}/consent`)).status,
+    ).toBe(404);
+    const result = await evaluation(id);
+    await json(await decide(id, 1, scriptedAgent(result)));
+    const { draft, response } = await execute(id, 1);
+    expect((await verifyAtMerchant(draft.id, response)).ack.status).toBe(200);
+    // The verified receipt for the governed transfer clears the details; the record remains.
+    expect(await consentOf(id)).toBeNull();
+    const after = MerchantClaimList.parse(
+      await json(await site('merchant', 'GET', '/api/v1/claims')),
+    );
+    expect(after.items.map((item) => item.handoffId)).toContain(id);
+  },
+);
+
+integration('Consent: cancelling a claim clears the consented details', async () => {
+  const claim = await fileClaim(partial(4_000));
+  const id = claim.handoff.id;
+  expect(await consentOf(id)).not.toBeNull();
+  const cancelled = await json<ClaimView>(
+    await site('merchant', 'POST', `/api/v1/claims/${id}/cancel`, {
+      requestId: crypto.randomUUID(),
+      version: 1,
+    }),
+  );
+  expect(cancelled.handoff.status).toBe('cancelled');
+  expect(await consentOf(id)).toBeNull();
+});
+
+integration(
+  'Consent: a filing whose answer was lost keeps its consent once it is reconciled',
+  async () => {
+    const body: FileClaim = {
+      requestId: crypto.randomUUID(),
+      data,
+      approvedFields: ['orderReference', 'damageDescription'],
+      photoProvided: true,
+      requestedResolution: partial(4_000),
+    };
+    let dropped = false;
+    const lossy: Fetcher = async (input, init) => {
+      const response = await routeFetch(input, init);
+      if (
+        !dropped &&
+        init?.method === 'POST' &&
+        new URL(String(input)).pathname.endsWith('/handoffs')
+      ) {
+        dropped = true;
+        throw new TypeError('connection reset after the platform committed');
+      }
+      return response;
+    };
+    const lost = await merchantClaims(configs.merchant, lossy, merchantStore)
+      .file(body)
+      .catch((error: { status?: number }) => error);
+    expect(lost).toMatchObject({ status: 502 });
+    // The claim exists on the platform but is not linked yet, so it is not listed.
+    const before = MerchantClaimList.parse(
+      await json(await site('merchant', 'GET', '/api/v1/claims')),
+    );
+    const reconciled = await json<{ handoff: HandoffDetail }>(
+      await site('merchant', 'GET', `/api/v1/claims/operations/${body.requestId}`),
+    );
+    const id = reconciled.handoff.id;
+    expect(before.items.map((item) => item.handoffId)).not.toContain(id);
+    expect(await consentOf(id)).toEqual({
+      data,
+      approvedFields: ['orderReference', 'damageDescription'],
+    });
+    const after = MerchantClaimList.parse(
+      await json(await site('merchant', 'GET', '/api/v1/claims')),
+    );
+    expect(after.items.map((item) => item.handoffId)).toContain(id);
+    // Replaying the same request ID with different content is refused before the platform call.
+    const changed = await site('merchant', 'POST', '/api/v1/claims', {
+      ...body,
+      requestedResolution: partial(3_000),
+    });
+    expect(changed.status).toBe(409);
+    expect((await changed.json()).error.code).toBe('REQUEST_CONFLICT');
+    // An exact replay returns the same claim.
+    const replay = ClaimView.parse(
+      await json(await site('merchant', 'POST', '/api/v1/claims', body), 201),
+    );
+    expect(replay.handoff.id).toBe(id);
+  },
+);
+
+function filing(): FileClaim {
+  return {
+    requestId: crypto.randomUUID(),
+    data,
+    approvedFields: ['orderReference', 'damageDescription'],
+    photoProvided: true,
+    requestedResolution: partial(4_000),
+  };
+}
+const isFiling = (input: Parameters<Fetcher>[0], init: Parameters<Fetcher>[1]) =>
+  init?.method === 'POST' && new URL(String(input)).pathname.endsWith('/handoffs');
+const pendingRows = async (requestId: string) =>
+  (
+    await stack.merchantSql`SELECT handoff_id FROM merchant_claims WHERE request_id = ${requestId}`
+  ).map((row: { handoff_id: string | null }) => row.handoff_id);
+const backdate = (requestId: string) =>
+  stack.merchantSql`UPDATE merchant_claims SET filed_at = now() - interval '11 minutes' WHERE request_id = ${requestId}`;
+
+integration(
+  'Consent: a failed link after the platform call is repaired by checking the request',
+  async () => {
+    const body = filing();
+    const failingLink = {
+      ...merchantStore,
+      bindClaim: async () => {
+        throw Error('merchant database unavailable');
+      },
+    };
+    await expect(
+      merchantClaims(configs.merchant, routeFetch, failingLink).file(body),
+    ).rejects.toThrow('merchant database unavailable');
+    expect(await pendingRows(body.requestId)).toEqual([null]);
+    const reconciled = await json<{ handoff: HandoffDetail }>(
+      await site('merchant', 'GET', `/api/v1/claims/operations/${body.requestId}`),
+    );
+    expect(await consentOf(reconciled.handoff.id)).not.toBeNull();
+  },
+);
+
+integration('Consent sweep: a lost filing nobody checked is linked from the platform', async () => {
+  const body = filing();
+  const lossy: Fetcher = async (input, init) => {
+    const response = await routeFetch(input, init);
+    if (isFiling(input, init)) throw new TypeError('connection reset after the platform committed');
+    return response;
+  };
+  await merchantClaims(configs.merchant, lossy, merchantStore)
+    .file(body)
+    .catch(() => undefined);
+  // A recent filing is left alone: its answer may still be on the way.
+  await json(await site('merchant', 'GET', '/api/v1/claims'));
+  expect(await pendingRows(body.requestId)).toEqual([null]);
+  await backdate(body.requestId);
+  const list = MerchantClaimList.parse(await json(await site('merchant', 'GET', '/api/v1/claims')));
+  const [handoffId] = await pendingRows(body.requestId);
+  if (!handoffId) throw Error('The sweep did not link the filing');
+  expect(list.items.map((item) => item.handoffId)).toContain(handoffId);
+  expect(await consentOf(handoffId)).not.toBeNull();
+});
+
+integration('Consent sweep: a filing the platform never received is deleted', async () => {
+  const body = filing();
+  const unreachable: Fetcher = async (input, init) => {
+    if (isFiling(input, init)) throw new TypeError('connection refused');
+    return routeFetch(input, init);
+  };
+  await merchantClaims(configs.merchant, unreachable, merchantStore)
+    .file(body)
+    .catch(() => undefined);
+  expect(await pendingRows(body.requestId)).toEqual([null]);
+  await backdate(body.requestId);
+  // While the platform can't be reached, the filing is kept for a later sweep.
+  const offline: Fetcher = async (input, init) => {
+    if (new URL(String(input)).origin === origins.platform) throw new TypeError('platform down');
+    return routeFetch(input, init);
+  };
+  await merchantClaims(configs.merchant, offline, merchantStore).list();
+  expect(await pendingRows(body.requestId)).toEqual([null]);
+  await json(await site('merchant', 'GET', '/api/v1/claims'));
+  expect(await pendingRows(body.requestId)).toEqual([]);
+});
+
+integration(
+  'Consent sweep: an exact replay in flight is not removed by a concurrent sweep',
+  async () => {
+    const body = filing();
+    const unreachable: Fetcher = async (input, init) => {
+      if (isFiling(input, init)) throw new TypeError('connection refused');
+      return routeFetch(input, init);
+    };
+    await merchantClaims(configs.merchant, unreachable, merchantStore)
+      .file(body)
+      .catch(() => undefined);
+    await backdate(body.requestId);
+    // The sweep picked the filing as stale, and the platform has no record of it yet...
+    const cutoff = new Date(Date.now() - 10 * 60_000);
+    const [{ request_sha256: sha }] =
+      await stack.merchantSql`SELECT request_sha256 FROM merchant_claims WHERE request_id = ${body.requestId}`;
+    // ...when an exact replay stores the same filing again before calling the platform.
+    await merchantStore.reserveClaim(body.requestId, sha, {
+      data,
+      approvedFields: body.approvedFields,
+    });
+    await merchantStore.discardPendingClaim(body.requestId, cutoff);
+    expect(await pendingRows(body.requestId)).toEqual([null]);
+    // A replay with different content does not restart the clock, so the sweep still removes it.
+    await backdate(body.requestId);
+    await merchantStore.reserveClaim(body.requestId, 'f'.repeat(64), {
+      data,
+      approvedFields: body.approvedFields,
+    });
+    await merchantStore.discardPendingClaim(body.requestId, cutoff);
+    expect(await pendingRows(body.requestId)).toEqual([]);
+  },
+);
+
+integration(
+  'Consent: a refused or uncertain filing keeps its consent until the sweep settles it',
+  async () => {
+    const body = filing();
+    const refused: Fetcher = async (input, init) =>
+      isFiling(input, init)
+        ? new Response(
+            JSON.stringify({
+              error: { code: 'INVALID_INPUT', message: 'x', requestId: crypto.randomUUID() },
+            }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
+        : routeFetch(input, init);
+    await expect(
+      merchantClaims(configs.merchant, refused, merchantStore).file(body),
+    ).rejects.toThrow();
+    expect(await pendingRows(body.requestId)).toEqual([null]);
   },
 );

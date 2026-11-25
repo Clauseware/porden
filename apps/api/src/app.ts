@@ -309,21 +309,32 @@ export function createApp(
     );
   } else {
     app.post('/api/v1/claims', async (c) =>
-      c.json(await merchantClaims(config, fetcher).file(FileClaim.parse(await c.req.json())), 201),
+      c.json(
+        await merchantClaims(config, fetcher, db).file(FileClaim.parse(await c.req.json())),
+        201,
+      ),
+    );
+    app.get('/api/v1/claims', async (c) =>
+      c.json(await merchantClaims(config, fetcher, db).list()),
+    );
+    app.get('/api/v1/claims/:id/consent', async (c) =>
+      c.json(await merchantClaims(config, fetcher, db).consent(z.uuid().parse(c.req.param('id')))),
     );
     app.get('/api/v1/orders/:reference', (c) => c.json(orderFacts(c.req.param('reference'))));
     app.get('/api/v1/claims/operations/:requestId', async (c) =>
       c.json(
-        await merchantClaims(config, fetcher).reconcile(z.uuid().parse(c.req.param('requestId'))),
+        await merchantClaims(config, fetcher, db).reconcile(
+          z.uuid().parse(c.req.param('requestId')),
+        ),
       ),
     );
     app.get('/api/v1/claims/:id', async (c) =>
-      c.json(await merchantClaims(config, fetcher).read(z.uuid().parse(c.req.param('id')))),
+      c.json(await merchantClaims(config, fetcher, db).read(z.uuid().parse(c.req.param('id')))),
     );
     app.post('/api/v1/claims/:id/clarifications/resolve', async (c) => {
       const input = ResolveClaimClarification.parse(await c.req.json());
       return c.json(
-        await merchantClaims(config, fetcher).resolveClarification(
+        await merchantClaims(config, fetcher, db).resolveClarification(
           z.uuid().parse(c.req.param('id')),
           input,
         ),
@@ -332,7 +343,7 @@ export function createApp(
     app.post('/api/v1/claims/:id/cancel', async (c) => {
       const input = VersionCommand.parse(await c.req.json());
       return c.json(
-        await merchantClaims(config, fetcher).cancel(z.uuid().parse(c.req.param('id')), input),
+        await merchantClaims(config, fetcher, db).cancel(z.uuid().parse(c.req.param('id')), input),
       );
     });
     app.post('/api/v1/transfers', async (c) => {
@@ -359,7 +370,8 @@ export function createApp(
     });
     async function accept(id: string, token: string, requestId: string) {
       const claims = await verifyReceipt({ receipt: token, requestId }, config, fetcher);
-      if (claims.governance) await merchantClaims(config, fetcher).verifyReceiptResolution(claims);
+      if (claims.governance)
+        await merchantClaims(config, fetcher, db).verifyReceiptResolution(claims);
       return db.accept(id, claims, token);
     }
     app.post('/api/v1/transfers/:id/receipts', async (c) => {

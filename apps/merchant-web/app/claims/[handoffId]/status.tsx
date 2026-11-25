@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from 'react';
 import { proposeClaimAction, submitClaimProposal, type ClaimTask } from '../../../../claims-agent';
 import { createMerchantClaimsClient } from '../../../../claims-client';
 import { loadAgent } from '../agent';
-import { clearConsent } from '../consent-store';
 import {
   actionText,
   failureText,
@@ -92,16 +91,6 @@ export default function Status({ handoffId }: { handoffId: string }) {
       active = false;
     };
   }, [handoffId, acceptedVersion, tick]);
-
-  const settled =
-    load.state === 'ready' &&
-    (CLOSED.includes(load.view.handoff.status) ||
-      load.view.handoff.executions.some(
-        (item) => item.version === load.view.handoff.acceptedVersion && item.status === 'completed',
-      ));
-  useEffect(() => {
-    if (settled) clearConsent(handoffId);
-  }, [settled, handoffId]);
 
   function reload() {
     setLoad({ state: 'loading' });
@@ -215,7 +204,6 @@ export default function Status({ handoffId }: { handoffId: string }) {
         title: 'Claim cancelled',
         text: 'The server recorded the cancellation.',
       });
-      clearConsent(handoffId);
       reload();
     } catch (error) {
       const code =
@@ -299,9 +287,16 @@ export default function Status({ handoffId }: { handoffId: string }) {
         <p>
           <span className="stage-tag">{handoff.status.replaceAll('_', ' ')}</span>
         </p>
-        <Link className="claims-back" href="/claims/new">
-          File a new claim
-        </Link>
+        <p>
+          <Link className="claims-back" href="/claims">
+            Your claims
+          </Link>
+        </p>
+        <p>
+          <Link className="claims-back" href="/claims/new">
+            File a new claim
+          </Link>
+        </p>
       </nav>
 
       <div className="claims-main">
@@ -312,7 +307,9 @@ export default function Status({ handoffId }: { handoffId: string }) {
         <p className="hint">
           Version {handoff.currentVersion} · updated {when(handoff.updatedAt)}
         </p>
-        <p className="hint">Save this link. It is the only way to find this claim again.</p>
+        <p className="hint">
+          You can find this claim again under <Link href="/claims">Your claims</Link>.
+        </p>
 
         <div className="claims-cols">
           <div className="claims-col">

@@ -93,7 +93,8 @@ export function refusalText(code: string) {
     return 'The claim changed after you opened it. Reload the claim and try again. Nothing was changed.';
   if (code === 'POLICY_VIOLATION')
     return 'That is not allowed by the courier’s policy. Nothing was changed.';
-  return `The server refused this request (${code}). Nothing was changed.`;
+  // Customers get plain words; the code stays only as a reference for support.
+  return `The claim service could not accept this request. Nothing was changed. Reference: ${code}.`;
 }
 
 export function isSignedOut(error: unknown) {

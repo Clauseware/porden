@@ -1,13 +1,20 @@
 'use client';
 
 import type { PordenEvent, TransferOutcome, VerifiedReceipt } from '@porden/contracts';
+import type { ClaimConsent } from '@porden/contracts/delivery-claims';
 import { createPordenClient, getErrorMessage } from '@porden/sdk/delivery';
 import { useEffect, useRef, useState } from 'react';
-import { clearConsent, loadConsent, type SavedConsent } from '../consent-store';
-import { ALL_FIELDS, FIELD_LABEL } from '../copy';
+import { createMerchantClaimsClient } from '../../../../claims-client';
+import { ALL_FIELDS, failureText, FIELD_LABEL } from '../copy';
 
 type Client = ReturnType<typeof createPordenClient>;
 type Review = Parameters<Parameters<Client['transfer']>[0]['confirm']>[0];
+
+// The merchant server keeps what the customer consented to share until the case can't be sent.
+type Consent =
+  | { state: 'loading' }
+  | { state: 'ready'; consent: ClaimConsent | null }
+  | { state: 'error'; message: string };
 
 type State =
   | { state: 'idle' }
@@ -40,7 +47,8 @@ export function SendCase(props: {
   onChanged: () => void;
 }) {
   const { handoffId, version } = props;
-  const [consent] = useState<SavedConsent | undefined>(() => loadConsent(handoffId));
+  const [saved, setSaved] = useState<Consent>({ state: 'loading' });
+  const consent = saved.state === 'ready' ? saved.consent : null;
   const [state, setState] = useState<State>({ state: 'idle' });
   const approval = useRef<((allowed: boolean) => void) | undefined>(undefined);
   const resultRef = useRef<HTMLHeadingElement>(null);
@@ -51,6 +59,25 @@ export function SendCase(props: {
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   useEffect(() => {
+    let active = true;
+    createMerchantClaimsClient()
+      .consent(handoffId)
+      .then((result) => {
+        if (active) setSaved({ state: 'ready', consent: result.consent });
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setSaved({
+            state: 'error',
+            message: failureText(error, 'This claim was not filed from this merchant account.'),
+          });
+      });
+    return () => {
+      active = false;
+    };
+  }, [handoffId]);
+
+  useEffect(() => {
     if (state.state === 'result' || state.state === 'unknown' || state.state === 'review')
       resultRef.current?.focus();
   }, [state]);
@@ -59,7 +86,6 @@ export function SendCase(props: {
 
   function accepted(outcome: TransferOutcome) {
     if (outcome.status === 'accepted') {
-      clearConsent(handoffId);
       props.onReceipt(outcome.receipt);
       setState({
         state: 'result',
@@ -239,16 +265,22 @@ export function SendCase(props: {
         The courier accepted version {version}. Consent applies to this version only. If the courier
         changes the terms, that is a new version and needs new consent.
       </p>
-      {!consent && !props.executionReserved && (
+      {saved.state === 'loading' && <p role="status">Loading the details you agreed to share…</p>}
+      {saved.state === 'error' && (
+        <p className="notice" role="alert">
+          {saved.message}
+        </p>
+      )}
+      {saved.state === 'ready' && !consent && !props.executionReserved && (
         <p className="notice">
-          This tab does not have the details you agreed to share when you filed the claim, so the
-          case can’t be sent from here. Open the claim in the tab where you filed it.
+          The details you agreed to share are no longer kept for this claim, so the case can’t be
+          sent. File a new claim if you still need one.
         </p>
       )}
       {consent && (
         <>
           <p className="hint">
-            This device keeps the details you agreed to share only while you can still send this
+            The merchant keeps the details you agreed to share only while you can still send this
             case.
           </p>
           <h3>Fields that will be shared</h3>

@@ -195,6 +195,7 @@ export async function startClaimsStack(options: {
     merchantStore,
     courierStore,
     courierSql,
+    merchantSql,
     courierPlatform,
     merchantPlatform,
     approver,
