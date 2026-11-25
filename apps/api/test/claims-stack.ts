@@ -118,6 +118,8 @@ export async function startClaimsStack(options: {
   };
   for (const role of ['merchant', 'courier'] as const)
     configs[role] = loadConfig({
+      GROQ_API_KEY: 'test-groq-key',
+      GROQ_MODEL: 'test/groq-model',
       ...options.env,
       ORGANIZATION_ROLE: role,
       PUBLIC_ORIGIN: origins[role],

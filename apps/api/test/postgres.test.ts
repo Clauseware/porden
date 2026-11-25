@@ -55,6 +55,8 @@ beforeAll(async () => {
       SESSION_SECRET: role.repeat(32),
       PARTNER_SECRET: 'p'.repeat(32),
       DEMO_PASSWORD: 'test-password',
+      GROQ_API_KEY: 'test-groq-key',
+      GROQ_MODEL: 'test/groq-model',
       SIGNING_KEY_PATH: path,
     });
   }

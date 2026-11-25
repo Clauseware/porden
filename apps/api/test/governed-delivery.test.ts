@@ -152,6 +152,8 @@ beforeAll(async () => {
       SESSION_SECRET: role.repeat(32),
       PARTNER_SECRET: 'p'.repeat(32),
       DEMO_PASSWORD: 'governed-test',
+      GROQ_API_KEY: 'test-groq-key',
+      GROQ_MODEL: 'test/groq-model',
       SIGNING_KEY_PATH: key(role),
       PORDEN_API_ORIGIN: platformOrigin,
       PORDEN_INTEGRATION_TOKEN: role === 'merchant' ? tokenA : tokenB,
