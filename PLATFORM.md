@@ -105,6 +105,11 @@ Money is expressed as integer minor units, not floating point totals. Terms and 
 | `decideRevision` | `POST /handoffs/:id/revisions/:revisionId/decision` (sender human approver) |
 | `finishHandoff` | `POST /handoffs/:id/finish` (receiver, accepted exact version) |
 | `getAuthorization` | `GET /handoffs/:id/authorization?version=N` |
+| `verifyAuthorization` | `POST /handoffs/:id/authorization/verify` (receiver; checks one execution scope) |
+| `requestClarification` | `POST /handoffs/:id/clarifications` (receiver) |
+| `resolveClarification` | `POST /handoffs/:id/clarifications/resolve` (sender) |
+| `reserveExecution`, `settleExecution` | `POST /handoffs/:id/executions`, `/executions/settle` (receiver) |
+| `verifyReceipt` | `GET /.well-known/jwks.json`, then a local ES256 signature check |
 | `listPendingApprovals` | `GET /approvals` (authorized sender human) |
 | `getWorkflowHistory` | `GET /workflows/:id` |
 | `reconcileOperation` | `GET /operations/:requestId` (same principal that issued the operation) |

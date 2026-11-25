@@ -1,5 +1,49 @@
 # Official-runtime integration: investigation and results
 
+## Claim workflow verification: 2026-11-25
+
+The damaged-parcel claim workflow adds agent negotiation on top of the platform: the merchant agent files a claim, the courier agent proposes one policy decision, counter-offers become new versions that a human approves, and the case write is bound to the accepted version.
+
+| Check | Observed outcome |
+| --- | --- |
+| `bun run test:unit` | **80 passed, 0 failed** |
+| `bun run test:api` | **90 passed, 0 failed**, including the claim negotiation, governed delivery and receipt verification suites |
+| `bun run test:claims:browser` | **9 passed, 0 failed** with scripted model responses: routine claim, counter-offer, clarification, adversarial courier and merchant models, cross-site boundaries and a lost courier response reconciled without a second write |
+| Real-model evaluation (`bun run test:claims:live`) | **17 of 20** runs reached the expected outcome with `nvidia/nemotron-3.5-super-vl:free`. The other 3 failed with provider `502 PROVIDER_UNAVAILABLE` and are recorded as failures. |
+| Real-model safety counts | Courier decisions within policy: 25 of 25. Server policy refusals, duplicate executions and unauthorized writes: 0. |
+
+Limits of this evidence:
+
+- The real-model evaluation runs the nsDeploy engine, site actions, model routes and services under Bun. It does not exercise the browser UI, the action-bridge popup or cross-site peer loading, and its human approvals are scripted.
+- One complete claim has been run through the browser UI with a real model, on local dev servers (see below). Repeated-run reliability in the browser is unmeasured.
+- The 20 runs were made in two sessions. Eleven runs in the first session were rate-limited by the provider and were re-run the next day; the original files were kept.
+- Photo evidence is text supplied by the customer. An answered clarification counts as a received photo.
+- Nothing is deployed. Public HTTPS behaviour remains unverified.
+
+Evidence is under `tmp/porden-claims-browser/` and `tmp/porden-claims-eval/`, which Git ignores.
+
+### One real-model claim through the browser UI: 2026-11-25
+
+Run by hand on the local setup in [docs/WORKSPACE.md](docs/WORKSPACE.md#claim-workflow-setup), with all six dev processes and the configured model route. Model calls were not scripted: the organization APIs logged 15 model requests, all answered, one of them by the fallback provider.
+
+| Step | Observed |
+| --- | --- |
+| Customer message asks for a full refund and says the address must not be shared | The merchant agent proposed a full-refund claim without the address. Version 1 was created for 80.00 USD. |
+| Courier agent, first run | Proposed `clarify` (photo required), the only non-reject decision the policy allowed. |
+| Customer answer | Sent through the merchant agent. |
+| Courier agent, second run | Proposed `counter` with a partial refund. The server built version 2 at 50.00 USD. |
+| Dashboard | The merchant approver reviewed version 1 against version 2 and approved version 2. |
+| Courier agent, third run | Proposed `accept` for version 2. |
+| Send case | The merchant agent delegated to the courier network, the courier confirmed in its own pop-up window, and the merchant showed "Courier confirmed: partial refund of 50.00 USD" with the signature checked. |
+| Courier agent, fourth run | Proposed `complete`. The merchant page showed the claim as completed. |
+
+Two model errors occurred, and neither produced a wrong write:
+
+- The merchant agent set `photoProvided` to false although the customer's message said a photo existed. The claim went through a clarification it did not need.
+- The first attempt to send the case failed with "The courier did not return a valid proposal". No case was written, and a second attempt succeeded.
+
+This run was driven through browser automation. The negotiation and dashboard steps ran in one browser and the pop-up step in headless Chromium, because the first browser could not open a pop-up window.
+
 ## Error boundaries and quality tooling follow-up
 
 Implemented consistent safe API error envelopes with diagnostic request IDs, provider/network/status classification, SDK transport and schema-error normalization, Next.js page/root render-error screens, and controlled process lifecycle errors. Sanitized diagnostic tests verify that private error messages and SQL/provider payloads do not reach responses or logs. Provider streaming failures terminate the stream after headers; they cannot retroactively become a JSON error response. No automatic write retries or successful defaults were introduced.

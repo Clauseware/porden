@@ -1,8 +1,8 @@
 # Porden
 
-The versioned task platform, organization access, human revision approvals, central dashboard and bidirectional demo consumers are implemented alongside the original delivery integration. See [PLATFORM.md](PLATFORM.md) for local setup, account locations, API/SDK contracts, the $500-to-$550 demo and verification commands.
+The versioned task platform, organization access, human revision approvals, central dashboard and bidirectional demo consumers are implemented alongside the original delivery integration. See [PLATFORM.md](../PLATFORM.md) for local setup, account locations, API/SDK contracts, the $500-to-$550 demo and verification commands.
 
-Bun workspace implementation of [the Porden plan](notes/porden-planning/README.md): independent Hono APIs backed by PostgreSQL through Drizzle ORM, browser TypeScript SDK, shared Zod contracts, and two Next.js demo applications. The merchant consent flow, progress, cancellation/refusal, unknown-outcome recovery and courier receipt view follow the Forest & Paper direction in `brand.md` and `design.md`.
+Bun workspace implementation of [the Porden plan](../notes/porden-planning/README.md): independent Hono APIs backed by PostgreSQL through Drizzle ORM, browser TypeScript SDK, shared Zod contracts, and two Next.js demo applications. The merchant consent flow, progress, cancellation/refusal, unknown-outcome recovery and courier receipt view follow the Forest & Paper direction in `brand.md` and `design.md`.
 
 The protected Node/SQLite reference remains in `server.mjs`, `config.mjs`, `public/`, and `tests/`. Run it with `bun run start:baseline`. Its evidence does not establish that the replacement stack works end to end.
 
@@ -29,6 +29,10 @@ Copy-Item apps/api/.env.merchant.example apps/api/.env.merchant
 Copy-Item apps/api/.env.courier.example apps/api/.env.courier
 ```
 
+In bash or zsh, use `cp` in place of `Copy-Item`. The other commands are the same.
+
+The organization APIs do not start without `GROQ_API_KEY` and `GROQ_MODEL`. Copy [.env.example](../.env.example) to a root `.env` and set them there, along with `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` if you want the agents to call a model. The `dev:api:*` scripts load the root `.env` first.
+
 Set independent `SESSION_SECRET` and `DEMO_PASSWORD` values in each organization file. Set the same randomly generated `PARTNER_SECRET` in both files. Keep private keys separate and stable; the generator preserves existing keys. Existing root `.env` OpenRouter settings remain private. Compose credentials are local demo credentials; the two organization roles cannot connect to each other's databases. The administrator is only for initialization and isolated tests.
 
 ```powershell
@@ -44,6 +48,40 @@ bun run dev:courier
 Merchant website: http://localhost:4100; courier: http://localhost:4200. APIs bind to loopback ports 5100/5200 and are separately configured. Next.js proxies API, discovery, official runtime assets and receiver bridge to its own organization's backend. `API_INTERNAL_ORIGIN` optionally overrides each proxy destination. There are no private `NEXT_PUBLIC_*` settings.
 
 Open the courier site and sign in using its configured `DEMO_PASSWORD`, then sign in on the merchant site using the merchant's password. Fill in the synthetic damage case, review the exact fields, approve sharing, confirm the merchant review, and open the courier window for its independent approval. The merchant shows a verified receipt and links to the authenticated courier-owned record. Unknown outcomes offer read-only receipt recovery and disable new submissions. Demo authentication uses a one-hour authenticated session, with separate cookie names for local organizations. It is not production identity or a production rate-limiting solution.
+
+## Claim workflow setup
+
+The damaged-parcel claim workflow at `/claims` needs the platform as well as both organization APIs. Each organization API calls the platform with its own integration token.
+
+1. Complete the platform quick start in the [README](../README.md#quick-start) and the local setup above.
+2. Open `tmp/platform-demo/accounts.json`. The merchant acts as Company A and the courier as Company B.
+3. In `apps/api/.env.merchant`, set the four platform values:
+
+   | Setting                       | Value                                   |
+   | ----------------------------- | --------------------------------------- |
+   | `PORDEN_API_ORIGIN`           | `http://localhost:5300`                 |
+   | `PORDEN_INTEGRATION_TOKEN`    | The `secret` of the `a.agent` principal |
+   | `PORDEN_ORGANIZATION_ID`      | The `id` of Company A                   |
+   | `PORDEN_PEER_ORGANIZATION_ID` | The `id` of Company B                   |
+
+4. In `apps/api/.env.courier`, set the same four values with the roles swapped: the `b.agent` secret, Company B as the organization and Company A as the peer.
+5. Start six processes, each in its own terminal:
+
+   ```sh
+   bun run dev:platform
+   bun run dev:dashboard
+   bun run dev:api:merchant
+   bun run dev:api:courier
+   bun run dev:merchant
+   bun run dev:courier
+   ```
+
+6. Sign in on each site's home page (http://localhost:4100 and http://localhost:4200) with that site's `DEMO_PASSWORD`. The `/claims` pages have no sign-in form of their own.
+7. File a claim at http://localhost:4100/claims/new and work it at http://localhost:4200/claims. A courier counter-offer is decided in the dashboard at http://localhost:4300 by `a.approver`, whose password is its `secret` in `accounts.json`.
+
+Sending the case opens the courier's confirmation in a pop-up window, so use a browser that allows pop-ups for `localhost`. If the model returns an unusable proposal, the page reports "Not sent" and nothing is written; send the case again.
+
+An organization API refuses to start if only some of the four platform values are set. The endpoints, agent tasks and receipt verifier are documented in [claims-integration-contract.md](claims-integration-contract.md).
 
 ## Frontend integration
 
@@ -178,7 +216,7 @@ Cancelling merchant review creates no case. Refusing courier confirmation create
 
 ## OpenRouter configuration
 
-Create or extend the project-root `.env` using [.env.example](.env.example). Preserve any existing key:
+Create or extend the project-root `.env` using [.env.example](../.env.example). Preserve any existing key:
 
 ```dotenv
 OPENROUTER_API_KEY=your-openrouter-key
@@ -240,7 +278,7 @@ For an existing installation, `HANDOFF_PLAYWRIGHT_MODULE` can name its absolute 
 
 Browser-test evidence is written to `tmp/runtime-proof/trace.json` and `tmp/runtime-proof/merchant-receipt.png`. In the UI, the runtime trace is also available at `window.__nsweb.trace.export()` after starting a transfer. Trace data contains approved complaint fields, so use synthetic data.
 
-See [PROOF_RESULTS.md](PROOF_RESULTS.md) for validation results, investigation references and remaining conformance gaps.
+See [PROOF_RESULTS.md](../PROOF_RESULTS.md) for validation results, investigation references and remaining conformance gaps.
 
 ## Development limits
 
