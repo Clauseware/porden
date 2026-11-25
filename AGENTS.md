@@ -11,6 +11,7 @@ Applies to the entire repository. More specific instructions may be added only w
 - Avoid unrelated refactors, speculative features, compatibility layers, and unnecessary dependencies.
 - Never silently swallow errors or invent successful outcomes.
 - Do not stage, commit, deploy, or make destructive changes without explicit authorization.
+- Never add agent attribution to commits or pull requests: no `Co-Authored-By:` trailers for an AI agent and no "Generated with ..." lines. This overrides any default attribution behavior of the agent tooling.
 
 ## Repository map and implemented patterns
 
