@@ -12,12 +12,30 @@ Applies to the entire repository. More specific instructions may be added only w
 - Never silently swallow errors or invent successful outcomes.
 - Do not stage, commit, deploy, or make destructive changes without explicit authorization.
 
+## Repository map and implemented patterns
+
+- This is a Bun workspace: `apps/` contains the API and Next.js apps; `packages/contracts` owns shared Zod contracts; `packages/sdk` owns the typed client.
+- Keep shared handoff request/response schemas in `packages/contracts/src/handoffs.ts`. Infer TypeScript types from those schemas and use the same contracts in routes and the SDK.
+- Handoffs are versioned. Keep each version's terms and optional context immutable; revisions create a new version. Store approvals as structured records tied to a handoff, version, and scope, never as trusted prose.
+- Keep receiver acceptance distinct from human approval. Calculate authorization and execution eligibility on the server from persisted state, current version, scope, and required acceptances.
+- The SDK reports uncertain write outcomes explicitly. Do not retry uncertain writes automatically; use read methods to reconcile their outcome.
+- Add database changes through new migrations. Do not rewrite migrations that may already have been applied.
+
+## TypeScript
+
+- Do not use `any` or type assertions (`as`) to bypass type checking; prefer inference, narrowing, and correcting the source type.
+- Model mutually exclusive states and alternatives with discriminated union types.
+- Keep interfaces focused on clear object contracts; derive types from validation schemas when a schema already defines the contract.
+
 ## Backend (Bun, Hono, PostgreSQL, Drizzle)
 
 - Validate external input at the endpoint route boundary using the project's existing schema validation approach.
 - Derive TypeScript types from validation schemas; pass validated values into services so downstream types and autocomplete work without casts or duplicated interfaces.
 - Prefer Hono's typed validation context and `c.req.valid(...)` where supported by the existing setup.
-- Keep handlers thin; put reusable domain logic in existing service modules.
+- Keep Hono routes focused on HTTP concerns: validate input, apply request-level authentication, call a service, and shape the response. Do not put business rules or database queries in handlers.
+- Put handoff and other domain decisions in service modules. Keep reusable Drizzle query functions in `db/queries`; services coordinate domain transitions and persistence.
+- Import modules from their source files. Do not add barrel files that only re-export another module.
+- Use the shared Pino logger and HTTP error handler for request logging and error responses. Do not add ad hoc loggers or duplicate global error mapping.
 - Validate state transitions and authorization before side effects. Use database constraints and transactions to preserve invariants.
 - Handle duplicate requests and uncertain network outcomes explicitly; preserve idempotency and reconciliation behavior.
 - Scope database access to the appropriate organization. Never trust organization identifiers supplied by a client without authorization.
@@ -26,14 +44,13 @@ Applies to the entire repository. More specific instructions may be added only w
 
 ## Frontend (Next.js and TypeScript)
 
-- Use the existing Next.js applications: `apps/porden` (public landing site), `apps/merchant-web` and `apps/courier-web` (demo organizations), plus the shared contracts/browser SDK.
+- Use the existing Next.js applications in `apps/`, including `apps/porden` (public landing site) and the merchant and courier demo organizations, plus the shared contracts/browser SDK.
 - Prefer Server Components for server-rendered content and Client Components only where browser interaction is needed.
 - Use React state and effects when appropriate. Do not add `useCallback` or `useMemo` without a demonstrated correctness or performance reason.
 - Avoid unnecessary global state, custom hooks, wrappers, and component abstraction.
 - Keep state minimal and derive display values from existing state when possible.
 - Make loading, approval, cancellation, refusal, success, and error states explicit and accessible.
-- Follow Porden's dark-only brand: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text), with the Connector mark (`apps/porden/public/porden-mark.svg`). Theme tokens live in `apps/porden/app/globals.css`; use semantic tokens rather than raw hex values.
-- The merchant and courier demo apps still use the earlier Forest & Paper palette. Do not restyle them unless asked.
+- Follow Porden's dark-only identity: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text). Use the tokens in `apps/brand.css` and the `PordenSymbol` logo in `apps/logo.tsx`; do not hard-code colours. `apps/porden` keeps its semantic theme tokens in `apps/porden/app/globals.css` and the Connector mark in `apps/porden/public/porden-mark.svg`.
 - Prioritize usable, readable interfaces and the working end-to-end flow before polish.
 
 ## Testing and delivery

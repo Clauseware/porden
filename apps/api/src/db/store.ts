@@ -1,6 +1,6 @@
 import type { SQL } from 'bun';
 import { randomUUID } from 'node:crypto';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import {
   type Draft,
@@ -10,10 +10,15 @@ import {
   type CreateDraft,
   type ApproveTransfer,
   type CreateCase,
+  type DeliveryGovernance,
 } from '@porden/contracts';
-import { ApiError, hash, type signer } from '../security';
+import type { z } from 'zod';
+import type { ClaimConsent, Resolution } from '@porden/contracts/delivery-claims';
+import { ApiError } from '../application/errors';
+import { hash, type signer, type Fetcher } from '../security';
+import { verifyDeliveryConsent } from '../services/delivery-authorization';
 import type { Config } from '../config';
-import { transfers, transferEvents } from './merchant-schema';
+import { merchantClaims, transfers, transferEvents } from './merchant-schema';
 import { cases, receipts, shipments } from './courier-schema';
 import { migrationMetadata } from './metadata';
 
@@ -35,6 +40,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       recipientOrigin: row.recipientOrigin,
       caseType: row.caseType,
       data: row.draftData,
+      ...(row.governance ? { governance: row.governance } : {}),
       status: row.status,
       approvedFields: row.approvedFields,
       receipt: row.verifiedReceipt,
@@ -54,6 +60,18 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       idempotent,
     };
   }
+  function clearConsent(connection: typeof db | Transaction, handoffId: string) {
+    return connection
+      .update(merchantClaims)
+      .set({ consentData: null, approvedFields: null, consentClearedAt: new Date() })
+      .where(
+        and(
+          eq(merchantClaims.handoffId, handoffId),
+          eq(merchantClaims.customerId, 'demo-user'),
+          isNotNull(merchantClaims.consentData),
+        ),
+      );
+  }
   return {
     async ready() {
       const [row] = await db
@@ -72,9 +90,127 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           recipientOrigin: input.recipientOrigin,
           caseType: input.caseType,
           draftData: input.data,
+          governance: input.governance,
         })
         .returning();
       return draft(row);
+    },
+    /**
+     * Stores the consent for a filing before the platform is called. An exact replay of a filing
+     * that is not linked yet restarts its clock, so the stale-filing sweep can't remove it while
+     * the replay is in flight. Any other replay returns the existing record unchanged, so the
+     * caller can check it is the same filing.
+     */
+    async reserveClaim(requestId: string, requestSha256: string, consent: ClaimConsent) {
+      await db
+        .insert(merchantClaims)
+        .values({
+          requestId,
+          requestSha256,
+          customerId: 'demo-user',
+          orderReference: consent.data.orderReference,
+          consentData: consent.data,
+          approvedFields: consent.approvedFields,
+        })
+        .onConflictDoUpdate({
+          target: merchantClaims.requestId,
+          set: { filedAt: sql`now()` },
+          setWhere: and(
+            isNull(merchantClaims.handoffId),
+            eq(merchantClaims.requestSha256, requestSha256),
+            eq(merchantClaims.customerId, 'demo-user'),
+          ),
+        });
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(eq(merchantClaims.requestId, requestId), eq(merchantClaims.customerId, 'demo-user')),
+        );
+      return row;
+    },
+    /** A filing whose platform claim is not known yet. */
+    async findPendingClaim(requestId: string) {
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+          ),
+        );
+      return row;
+    },
+    /** Unlinked filings older than `before`, oldest first, for the stale-filing sweep. */
+    async stalePendingClaims(before: Date, limit: number) {
+      return db
+        .select({ requestId: merchantClaims.requestId })
+        .from(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+            lt(merchantClaims.filedAt, before),
+          ),
+        )
+        .orderBy(asc(merchantClaims.filedAt))
+        .limit(limit);
+    },
+    /** Links a filing to its platform claim. Already-linked filings are left as they are. */
+    async bindClaim(requestId: string, handoffId: string) {
+      await db
+        .update(merchantClaims)
+        .set({ handoffId })
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+          ),
+        );
+    },
+    /**
+     * Removes an unlinked filing the sweep settled. Only a filing still older than the sweep's
+     * cutoff is removed: a replay that restarted its clock in the meantime keeps it.
+     */
+    async discardPendingClaim(requestId: string, filedBefore: Date) {
+      await db
+        .delete(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+            lt(merchantClaims.filedAt, filedBefore),
+          ),
+        );
+    },
+    /** The customer's own claim record, or undefined if this customer did not file it here. */
+    async findClaim(handoffId: string) {
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(eq(merchantClaims.handoffId, handoffId), eq(merchantClaims.customerId, 'demo-user')),
+        );
+      return row;
+    },
+    async clearClaimConsent(handoffId: string) {
+      await clearConsent(db, handoffId);
+    },
+    async listClaims(limit: number) {
+      return db
+        .select({
+          handoffId: merchantClaims.handoffId,
+          orderReference: merchantClaims.orderReference,
+          filedAt: merchantClaims.filedAt,
+        })
+        .from(merchantClaims)
+        .where(and(eq(merchantClaims.customerId, 'demo-user'), isNotNull(merchantClaims.handoffId)))
+        .orderBy(desc(merchantClaims.filedAt))
+        .limit(limit);
     },
     async getDraft(id: string) {
       const [row] = await db
@@ -84,7 +220,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return draft(row);
     },
-    async approve(id: string, fields: ApproveTransfer['approvedFields']) {
+    async approve(id: string, fields: ApproveTransfer['approvedFields'], fetcher: Fetcher = fetch) {
       return db.transaction(async (tx) => {
         const row = await owned(tx, id);
         if (row.status !== 'draft') throw new ApiError('REQUEST_CONFLICT', 409);
@@ -99,6 +235,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         };
         const payloadSha256 = hash(data),
           expiresAt = Date.now() + 10 * 60 * 1000;
+        if (row.governance) await verifyDeliveryConsent(config, fetcher, row.governance, data);
         const approval = signing.sign(
           {
             issuer: config.origin,
@@ -109,6 +246,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             payloadSha256,
             approvedFields: fields,
             expiresAt,
+            ...(row.governance ? { governance: row.governance } : {}),
           },
           'porden-approval+jwt',
         );
@@ -170,6 +308,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           claims.audience !== config.origin ||
           claims.caseType !== row.caseType ||
           claims.payloadSha256 !== row.payloadSha256 ||
+          hash(claims.governance ?? null) !== hash(row.governance ?? null) ||
           hash([...claims.approvedFields].sort()) !== hash([...row.approvedFields].sort())
         )
           throw new ApiError('RECEIPT_INVALID', 403);
@@ -193,10 +332,18 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           })
           .where(eq(transfers.id, id));
         await tx.insert(transferEvents).values({ transferId: id, eventType: 'receipt_verified' });
+        // The case for this claim is sent: the consented details are no longer needed.
+        if (row.governance) await clearConsent(tx, row.governance.handoffId);
         return receipt;
       });
     },
-    async createCase(args: CreateCase) {
+    async createCase(
+      args: CreateCase,
+      governance?: z.infer<typeof DeliveryGovernance>,
+      resolution?: Resolution,
+      // Runs under the transfer lock before a new case is inserted; throw to abort without writing.
+      beforeInsert?: () => Promise<void>,
+    ) {
       return db.transaction(async (tx) => {
         // Serialize a transfer across differing runtime request IDs as well as exact replays.
         await tx.execute(
@@ -207,6 +354,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           requestId: args.requestId,
           caseType: args.caseType,
           data: args.data,
+          ...(governance ? { governance } : {}),
         });
         const existing = await tx
           .select({ case: cases, receipt: receipts })
@@ -223,6 +371,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             throw new ApiError('REQUEST_CONFLICT', 409);
           return caseResponse(existing[0], true);
         }
+        if (beforeInsert) await beforeInsert();
         const [shipment] = await tx
           .select()
           .from(shipments)
@@ -250,6 +399,8 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             approvedFields: Object.keys(args.data),
             status: 'accepted',
             receivedAt,
+            ...(governance ? { governance } : {}),
+            ...(resolution ? { resolution } : {}),
           },
           'porden-receipt+jwt',
         );
@@ -294,6 +445,27 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         );
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return caseResponse(row, true);
+    },
+    /**
+     * Holds the transfer lock (the same lock a case write takes) while `settle` runs with the
+     * committed case, if any. A concurrent write either committed before this read or will see
+     * the settled reservation after it and abort, so the two can never disagree.
+     */
+    async whileTransferLocked<T>(
+      transferId: string,
+      settle: (committed: ReturnType<typeof caseResponse> | undefined) => Promise<T>,
+    ) {
+      return db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${config.peerOrigin + ':' + transferId},0))`,
+        );
+        const [row] = await tx
+          .select({ case: cases, receipt: receipts })
+          .from(cases)
+          .innerJoin(receipts, eq(receipts.caseId, cases.id))
+          .where(and(eq(cases.callerOrigin, config.peerOrigin), eq(cases.transferId, transferId)));
+        return settle(row ? caseResponse(row, true) : undefined);
+      });
     },
     async getReceipt(id: string) {
       const [row] = await db

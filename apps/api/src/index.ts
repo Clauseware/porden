@@ -1,6 +1,7 @@
 import { SQL } from 'bun';
 import { loadConfig } from './config';
-import { signer, reportError } from './security';
+import { signer } from './security';
+import { reportError } from './observability/logger';
 import { store } from './db/store';
 import { createApp } from './app';
 
@@ -16,9 +17,9 @@ async function main() {
     if (!(await Bun.file(`${config.runtimePath}/engine.js`).exists()))
       throw Error('Pinned official nsDeploy runtime missing');
     const app = createApp(config, db, signing);
-    const server = Bun.serve({ hostname: '127.0.0.1', port: config.port, fetch: app.fetch });
+    const server = Bun.serve({ hostname: config.host, port: config.port, fetch: app.fetch });
     console.log(
-      `Porden ${config.role} API on http://127.0.0.1:${server.port}; public origin ${config.origin}`,
+      `Porden ${config.role} API on http://${config.host}:${server.port}; public origin ${config.origin}`,
     );
     const database = client;
     async function shutdown() {

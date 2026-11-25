@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
-import { createPordenClient, getErrorMessage, PordenError } from '@porden/sdk';
+import { createPordenClient, getErrorMessage, PordenError } from '@porden/sdk/delivery';
+import PordenSymbol from '../../logo';
 import {
   DamageData,
   type PublicConfig,
@@ -25,17 +27,49 @@ const eventLabels: Record<PordenEvent['type'], string> = {
   cancelled: 'Transfer cancelled',
   outcome_unknown: 'Receipt not yet confirmed',
 };
-export default function Handoff() {
-  const [events, setEvents] = useState<PordenEvent[]>([]);
+export type DebugState = 'empty' | 'success' | 'error';
+const debugTransferId = '00000000-0000-4000-8000-000000000000';
+const debugEvents: PordenEvent[] = (
+  [
+    'draft_created',
+    'recipient_discovered',
+    'consent_approved',
+    'receiver_confirmation_required',
+    'submitted',
+    'receipt_verified',
+  ] satisfies PordenEvent['type'][]
+).map((type) => ({ type, transferId: debugTransferId }));
+const debugOutcome: TransferOutcome = {
+  status: 'accepted',
+  transferId: debugTransferId,
+  receipt: {
+    issuer: 'http://localhost:4200',
+    receiptId: '00000000-0000-4000-8000-000000000001',
+    receiverCaseId: 'CASE-DEBUG-1',
+    requestId: 'debug',
+    receivedAt: '2026-01-01T00:00:00.000Z',
+    verification: 'valid',
+  },
+};
+// Dev-only state preview (/?debug=empty|success|error). page.tsx passes `debug` only outside production.
+export default function Handoff({ debug }: { debug?: DebugState }) {
+  const success = debug === 'success';
+  const [events, setEvents] = useState<PordenEvent[]>(success ? debugEvents : []);
   const [client, setClient] = useState(() => createPordenClient());
   const [config, setConfig] = useState<PublicConfig | null>(null);
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState(debug !== undefined);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(
+    debug === 'error'
+      ? 'Debug: the service could not complete the request. Your details are preserved.'
+      : '',
+  );
+  const [notice, setNotice] = useState('');
+  const [passwordRejected, setPasswordRejected] = useState(false);
   const [shareAddress, setShareAddress] = useState(false);
   const [review, setReview] = useState<Review | null>(null);
-  const [outcome, setOutcome] = useState<TransferOutcome | null>(null);
-  const [transferId, setTransferId] = useState('');
+  const [outcome, setOutcome] = useState<TransferOutcome | null>(success ? debugOutcome : null);
+  const [transferId, setTransferId] = useState(success ? debugTransferId : '');
   const approval = useRef<((allowed: boolean) => void) | null>(null);
   function showError(cause: unknown, suffix = '') {
     setError(`${getErrorMessage(cause)}${suffix}`);
@@ -48,6 +82,9 @@ export default function Handoff() {
   useEffect(() => {
     if (review) document.getElementById('review-heading')?.focus();
   }, [review]);
+  useEffect(() => {
+    if (outcome) document.getElementById('result-heading')?.focus();
+  }, [outcome]);
   useEffect(() => {
     let active = true;
     createPordenClient()
@@ -65,6 +102,16 @@ export default function Handoff() {
       .catch((cause) => {
         if (active) setError(getErrorMessage(cause));
       });
+    createPordenClient()
+      .getSession()
+      .then(() => {
+        if (active) setSignedIn(true);
+      })
+      .catch((cause) => {
+        // A 401 only means there is no session yet; the sign-in form covers it.
+        if (active && !(cause instanceof PordenError && cause.status === 401))
+          setError(getErrorMessage(cause));
+      });
     return () => {
       active = false;
     };
@@ -73,11 +120,22 @@ export default function Handoff() {
     event.preventDefault();
     setLoading(true);
     setError('');
+    setPasswordRejected(false);
     try {
       await client.signIn(String(new FormData(event.currentTarget).get('password')));
-      setSignedIn(true);
+      flushSync(() => {
+        setSignedIn(true);
+        setLoading(false);
+      });
+      document.getElementById('description')?.focus();
     } catch (cause) {
-      showError(cause);
+      if (cause instanceof PordenError && cause.code === 'UNAUTHORIZED_ACTION') {
+        setPasswordRejected(true);
+        setError(
+          `That password is incorrect. Check the merchant demo password and try again.${cause.requestId ? ` Reference: ${cause.requestId}.` : ''}`,
+        );
+      } else showError(cause);
+      document.getElementById('password')?.focus();
     } finally {
       setLoading(false);
     }
@@ -88,6 +146,7 @@ export default function Handoff() {
     const form = new FormData(event.currentTarget);
     setLoading(true);
     setError('');
+    setNotice('');
     setOutcome(null);
     setEvents([]);
     try {
@@ -131,11 +190,13 @@ export default function Handoff() {
   async function refresh() {
     const id = transferId || sessionStorage.getItem('porden-transfer');
     if (!id) {
-      setError('No transfer to check in this tab.');
+      setError('');
+      setNotice('No transfer has been started in this tab yet.');
       return;
     }
     setLoading(true);
     setError('');
+    setNotice('');
     setTransferId(id);
     try {
       const draft = await client.getTransfer(id);
@@ -157,17 +218,32 @@ export default function Handoff() {
       setLoading(false);
     }
   }
+  function startNewCase() {
+    sessionStorage.removeItem('porden-transfer');
+    flushSync(() => {
+      setOutcome(null);
+      setEvents([]);
+      setTransferId('');
+      setError('');
+      setNotice('');
+    });
+    document.getElementById('description')?.focus();
+  }
   const blocked = loading || outcome?.status === 'unknown' || outcome?.status === 'accepted';
+  const unconfigured = config !== null && (!config.openrouterConfigured || !config.openrouterModel);
   return (
     <>
       <header className="topbar">
         <Link className="wordmark" href="/">
+          <PordenSymbol />
           porden<span> / merchant</span>
         </Link>
-        <span className="badge">Independent merchant</span>
+        <nav className="topnav" aria-label="Merchant">
+          <Link href="/tasks">Company A task integration</Link>
+          <span className="badge">Independent merchant</span>
+        </nav>
       </header>
       <section className="intro">
-        <p className="eyebrow">A careful handoff</p>
         <h1>
           Share the context.
           <br />
@@ -179,7 +255,7 @@ export default function Handoff() {
         </p>
       </section>
       <div className="workspace">
-        <section className="panel">
+        <section className="zone">
           <div className="section-title">
             <span className="step">01</span>
             <h2>Your delivery case</h2>
@@ -194,6 +270,8 @@ export default function Handoff() {
               autoComplete="current-password"
               required
               maxLength={256}
+              aria-invalid={passwordRejected}
+              aria-describedby={passwordRejected ? 'merchant-error' : undefined}
             />
             <button disabled={loading || !config}>
               {loading ? 'Signing in…' : 'Sign in to merchant'}
@@ -202,7 +280,10 @@ export default function Handoff() {
           <form onSubmit={submit} hidden={!signedIn}>
             <fieldset disabled={Boolean(blocked)}>
               <label htmlFor="order">Order reference</label>
-              <input id="order" value="DEMO-1042" readOnly />
+              <input id="order" value="DEMO-1042" readOnly aria-describedby="order-hint" />
+              <p className="hint" id="order-hint">
+                Demo order. It cannot be changed.
+              </p>
               <label htmlFor="description">What happened?</label>
               <textarea
                 id="description"
@@ -235,12 +316,15 @@ export default function Handoff() {
                   />
                 </>
               )}
-              <button disabled={!config?.openrouterConfigured || !config.openrouterModel}>
+              <button
+                disabled={!config?.openrouterConfigured || !config.openrouterModel}
+                aria-describedby={unconfigured ? 'config-notice' : undefined}
+              >
                 {loading ? 'Preparing your handoff…' : 'Review sharing details'}
               </button>
             </fieldset>
-            {config && (!config.openrouterConfigured || !config.openrouterModel) && (
-              <p className="notice">
+            {unconfigured && (
+              <p className="notice" id="config-notice">
                 This demo is awaiting service configuration. Ask the demo operator to enable
                 transfers.
               </p>
@@ -251,49 +335,105 @@ export default function Handoff() {
               Check existing transfer
             </button>
           )}
+          <p className="status" role="status">
+            {notice}
+          </p>
           {error && (
-            <p className="notice danger" role="alert">
+            <p className="notice danger" id="merchant-error" role="alert">
               {error}
             </p>
           )}
         </section>
-        <aside className="panel">
-          <div className="section-title">
-            <span className="step">02</span>
-            <h2>A handoff you can follow</h2>
-          </div>
-          <p>
-            You approve what is shared. The courier asks for a separate approval before creating
-            your case.
-          </p>
-          {config && (
-            <a href={config.recipientOrigin} target="_blank" rel="noreferrer">
-              Open courier site to sign in ↗
+        {outcome?.status === 'accepted' ? (
+          <aside className="zone result" data-status="accepted" aria-labelledby="result-heading">
+            <div className="section-title">
+              <span className="step">02</span>
+              <h2 id="result-heading" tabIndex={-1}>
+                Courier received your case
+              </h2>
+            </div>
+            <p className="hint">
+              Accepted for investigation. This does not mean the issue is resolved.
+            </p>
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd className="verified">
+                  Receipt verified
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <path
+                      d="M3 8.5l3.2 3L13 4.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </dd>
+              </div>
+              <div>
+                <dt>Courier case</dt>
+                <dd>
+                  <code>{outcome.receipt.receiverCaseId}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Receipt</dt>
+                <dd>
+                  <code>{outcome.receipt.receiptId}</code>
+                </dd>
+              </div>
+            </dl>
+            <a
+              className="button"
+              href={`${config?.recipientOrigin}/?receiptId=${outcome.receipt.receiptId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View the courier-owned record ↗
             </a>
-          )}
-          <ol className="timeline" aria-label="Transfer progress">
-            {events.length ? (
-              events.map((event, index) => <li key={index}>{eventLabels[event.type]}</li>)
-            ) : (
-              <li>No details shared yet</li>
+            <button className="link-button" onClick={startNewCase}>
+              Start a new case
+            </button>
+          </aside>
+        ) : (
+          <aside className="zone">
+            <div className="section-title">
+              <span className="step">02</span>
+              <h2>A handoff you can follow</h2>
+            </div>
+            <p>
+              You approve what is shared. The courier asks for a separate approval before creating
+              your case.
+            </p>
+            {config && (
+              <a href={config.recipientOrigin} target="_blank" rel="noreferrer">
+                Open courier site to sign in ↗
+              </a>
             )}
-          </ol>
-          {loading && !review && (
-            <p role="status">
-              Follow the review dialogs. Open the courier window when prompted to approve the case
-              there.
+            <ol className="timeline" aria-label="Transfer progress" aria-live="polite">
+              {events.length ? (
+                events.map((event, index) => <li key={index}>{eventLabels[event.type]}</li>)
+              ) : (
+                <li className="empty">No details shared yet</li>
+              )}
+            </ol>
+            <p className="status" role="status">
+              {loading && !review && signedIn
+                ? 'Working on your handoff. Keep this tab open. If a courier window opens, approve the case there.'
+                : ''}
             </p>
-          )}
-          {transferId && (
-            <p className="metadata">
-              Transfer <code>{transferId}</code>
-            </p>
-          )}
-        </aside>
+            {transferId && (
+              <p className="metadata">
+                Transfer <code>{transferId}</code>
+              </p>
+            )}
+          </aside>
+        )}
       </div>
       {review && (
         <section className="panel review" aria-labelledby="review-heading">
-          <p className="eyebrow">Your permission</p>
           <h2 id="review-heading" tabIndex={-1}>
             Share these details with the courier?
           </h2>
@@ -323,54 +463,25 @@ export default function Handoff() {
           </div>
         </section>
       )}
-      {outcome && (
-        <section className="panel result" data-status={outcome.status} aria-live="polite">
-          <p className="eyebrow">Handoff outcome</p>
-          <h2>
-            {outcome.status === 'accepted'
-              ? 'Courier received your case'
-              : outcome.status === 'cancelled'
-                ? 'Transfer cancelled'
-                : outcome.status === 'rejected'
-                  ? 'Transfer refused'
-                  : outcome.reasonCode === 'RECEIVER_DECLINED'
-                    ? 'Courier approval declined'
-                    : 'Receipt not yet confirmed'}
+      {outcome && outcome.status !== 'accepted' && (
+        <section className="panel result" data-status={outcome.status}>
+          <h2 id="result-heading" tabIndex={-1}>
+            {outcome.status === 'cancelled'
+              ? 'Transfer cancelled'
+              : outcome.status === 'rejected'
+                ? 'Transfer refused'
+                : outcome.reasonCode === 'RECEIVER_DECLINED'
+                  ? 'Courier approval declined'
+                  : 'Receipt not yet confirmed'}
           </h2>
-          {outcome.status === 'accepted' ? (
-            <>
-              <p className="badge">Receipt verified</p>
-              <p>
-                The courier accepted your case for investigation. This does not mean the issue is
-                resolved.
-              </p>
-              <dl>
-                <div>
-                  <dt>Courier case</dt>
-                  <dd>
-                    <code>{outcome.receipt.receiverCaseId}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Receipt</dt>
-                  <dd>
-                    <code>{outcome.receipt.receiptId}</code>
-                  </dd>
-                </div>
-              </dl>
-              <a
-                href={`${config?.recipientOrigin}/?receiptId=${outcome.receipt.receiptId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                View the courier-owned record ↗
-              </a>
-            </>
-          ) : outcome.status === 'unknown' ? (
+          {outcome.status === 'unknown' ? (
             <>
               <p>
-                The courier may have received this case. Check its receipt before starting another
-                transfer.
+                {outcome.reasonCode === 'RECEIVER_DECLINED'
+                  ? 'The courier window reported that the case was declined. This transfer stays unconfirmed until the courier receipt check agrees.'
+                  : 'The courier may have received this case.'}{' '}
+                Check the courier receipt before you send this case again. If the courier still has
+                no record, contact the courier first.
               </p>
               <button onClick={refresh} disabled={loading}>
                 {loading ? 'Checking…' : 'Check courier receipt'}
@@ -378,8 +489,9 @@ export default function Handoff() {
             </>
           ) : (
             <p>
-              No new courier case was confirmed. You can review your details and start a new
-              transfer.
+              {outcome.status === 'rejected' ? 'The courier refused this case. ' : ''}No courier
+              case was confirmed. Your details are still in the form, so you can review them and
+              start a new transfer.
             </p>
           )}
         </section>

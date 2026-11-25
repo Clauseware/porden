@@ -10,7 +10,8 @@
   "dependencies": {
     "@porden/contracts": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "hono": "4.13.7"
+    "hono": "4.13.7",
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.11"

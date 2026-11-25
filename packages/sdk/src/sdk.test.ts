@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { createPordenClient, getErrorMessage } from './index';
+import { createPordenClient, getErrorMessage } from './delivery';
 import { acceptedFixture, declinedFixture, unknownFixture, signedReceiptFixture } from './fixtures';
 import { VerifiedReceipt } from '@porden/contracts';
 const originalFetch = globalThis.fetch;

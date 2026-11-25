@@ -17,64 +17,7 @@ import {
   type ReceiptSubmission,
 } from '@porden/contracts';
 import type { Config } from './config';
-
-export class ApiError extends Error {
-  constructor(
-    public code: string,
-    public status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 502 | 503 | 504,
-    message = code,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
-export function errorDiagnostics(error: unknown) {
-  let systemCode: string | undefined,
-    upstreamStatus: number | undefined,
-    configurationField: string | undefined;
-  for (
-    let current: unknown = error, depth = 0;
-    current && typeof current === 'object' && depth < 5;
-    depth++
-  ) {
-    if ('errno' in current && typeof current.errno === 'string') systemCode = current.errno;
-    else if ('code' in current && typeof current.code === 'string') systemCode = current.code;
-    if ('upstreamStatus' in current && typeof current.upstreamStatus === 'number')
-      upstreamStatus = current.upstreamStatus;
-    if (
-      'configurationField' in current &&
-      typeof current.configurationField === 'string' &&
-      /^[A-Z_]+$/.test(current.configurationField)
-    )
-      configurationField = current.configurationField;
-    current = 'cause' in current ? current.cause : undefined;
-  }
-  // Never log error messages, SQL, request payloads, headers or provider response bodies.
-  return {
-    systemCode:
-      systemCode && /^(CONFIGURATION_INVALID|E[A-Z_]+|ERR_[A-Z_]+|[A-Z0-9]{5})$/.test(systemCode)
-        ? systemCode
-        : undefined,
-    upstreamStatus,
-    configurationField,
-  };
-}
-export function reportError(operation: string, error: unknown, requestId?: string) {
-  const frames =
-    error instanceof Error
-      ? error.stack
-          ?.split('\n')
-          .filter((line) => /^\s+at /.test(line))
-          .slice(0, 4)
-      : undefined;
-  console.error('Porden error', {
-    operation,
-    requestId,
-    errorName: error instanceof Error ? error.name : 'NonError',
-    ...errorDiagnostics(error),
-    frames,
-  });
-}
+import { ApiError } from './application/errors';
 export const hash = (value: unknown) =>
   createHash('sha256').update(canonicalize(value)).digest('hex');
 export function equal(a: string, b: string) {
@@ -82,7 +25,37 @@ export function equal(a: string, b: string) {
     right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 }
-export function signer(config: Pick<Config, 'keyPath' | 'keyId'>) {
+const PublishedKey = z.strictObject({
+  kid: z.string().min(1),
+  alg: z.literal('ES256'),
+  kty: z.literal('EC'),
+  crv: z.literal('P-256'),
+  use: z.literal('sig'),
+  x: z.string(),
+  y: z.string(),
+});
+/**
+ * Loads retired public keys that stay published so receipts signed before a key rotation remain
+ * verifiable. Fails fast on private material, malformed keys or duplicate key IDs.
+ */
+function retiredKeys(path: string | undefined, currentKid: string) {
+  if (!path) return [];
+  const parsed = z
+    .strictObject({ keys: z.array(PublishedKey) })
+    .safeParse(JSON.parse(readFileSync(path, 'utf8')));
+  if (!parsed.success)
+    throw new Error('Retired signing keys must be public ES256 P-256 JWKs (no private fields)');
+  const kids = new Set([currentKid]);
+  for (const key of parsed.data.keys) {
+    if (kids.has(key.kid)) throw new Error(`Duplicate signing key ID: ${key.kid}`);
+    kids.add(key.kid);
+    createPublicKey({ key, format: 'jwk' });
+  }
+  return parsed.data.keys;
+}
+export function signer(
+  config: Pick<Config, 'keyPath' | 'keyId'> & { retiredKeysPath?: string | undefined },
+) {
   const key = createPrivateKey(readFileSync(config.keyPath));
   if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1')
     throw new Error('ES256 P-256 key required');
@@ -94,7 +67,12 @@ export function signer(config: Pick<Config, 'keyPath' | 'keyId'>) {
   };
   return {
     jwk,
-    sign(payload: unknown, typ: 'porden-approval+jwt' | 'porden-receipt+jwt') {
+    /** Published key set: the current signing key first, then retired verification-only keys. */
+    jwks: { keys: [jwk, ...retiredKeys(config.retiredKeysPath, config.keyId)] },
+    sign(
+      payload: unknown,
+      typ: 'porden-approval+jwt' | 'porden-receipt+jwt' | 'porden-handoff-receipt+jwt',
+    ) {
       const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: config.keyId, typ })).toString(
         'base64url',
       );
@@ -104,19 +82,61 @@ export function signer(config: Pick<Config, 'keyPath' | 'keyId'>) {
   };
 }
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-const PublicKeys = z.object({
-  keys: z.array(
-    z.object({
-      kid: z.string(),
-      alg: z.literal('ES256'),
-      kty: z.literal('EC'),
-      crv: z.literal('P-256'),
-      use: z.literal('sig'),
-      x: z.string(),
-      y: z.string(),
-    }),
-  ),
+const PublicKey = z.object({
+  kid: z.string(),
+  alg: z.literal('ES256'),
+  kty: z.literal('EC'),
+  crv: z.literal('P-256'),
+  use: z.literal('sig'),
+  x: z.string(),
+  y: z.string(),
 });
+type PublicKey = z.infer<typeof PublicKey>;
+// Issuer keys are cached per fetcher so public verification does not fetch keys on every request.
+// An unknown key ID forces one refresh (the issuer may have rotated), at most every 30 seconds.
+const keyCacheMs = 5 * 60_000,
+  keyRefreshMs = 30_000;
+const keyCache = new WeakMap<Fetcher, Map<string, { keys: PublicKey[]; fetchedAt: number }>>();
+// Unavailable or unreadable keys mean a token could not be checked, never that it is invalid.
+const unavailable = (cause?: unknown) =>
+  new ApiError('RECIPIENT_UNAVAILABLE', 502, undefined, { cause });
+async function fetchKeys(origin: string, fetcher: Fetcher) {
+  const response = await fetcher(`${origin}/.well-known/jwks.json`, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(5000),
+  }).catch((cause) => {
+    throw unavailable(cause);
+  });
+  if (!response.ok) throw unavailable();
+  const document = z.object({ keys: z.array(z.unknown()) }).safeParse(
+    await response.json().catch((cause) => {
+      throw unavailable(cause);
+    }),
+  );
+  if (!document.success) throw unavailable(document.error);
+  // Keys this verifier cannot use (other algorithms or types) are skipped, not fatal.
+  const keys: PublicKey[] = [];
+  for (const entry of document.data.keys) {
+    const key = PublicKey.safeParse(entry);
+    if (key.success) keys.push(key.data);
+  }
+  return keys;
+}
+async function issuerKey(origin: string, kid: string, fetcher: Fetcher, now = Date.now()) {
+  let byOrigin = keyCache.get(fetcher);
+  if (!byOrigin) keyCache.set(fetcher, (byOrigin = new Map()));
+  const cached = byOrigin.get(origin);
+  if (cached && now - cached.fetchedAt < keyCacheMs) {
+    const known = cached.keys.find((key) => key.kid === kid);
+    if (known) return known;
+    // Unknown key ID but a refresh is throttled: the issuer may have just rotated, so this token
+    // cannot be checked yet. Report it as unavailable rather than invalid.
+    if (now - cached.fetchedAt < keyRefreshMs) throw unavailable();
+  }
+  const keys = await fetchKeys(origin, fetcher);
+  byOrigin.set(origin, { keys, fetchedAt: now });
+  return keys.find((key) => key.kid === kid);
+}
 export async function verifyToken(
   token: string,
   origin: string,
@@ -131,22 +151,7 @@ export async function verifyToken(
     const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString());
     if (header.alg !== 'ES256' || header.typ !== typ || typeof header.kid !== 'string')
       throw Error('Invalid header');
-    const response = await fetcher(`${origin}/.well-known/jwks.json`, {
-      redirect: 'error',
-      signal: AbortSignal.timeout(5000),
-    }).catch((cause) => {
-      throw new ApiError('RECIPIENT_UNAVAILABLE', 502, undefined, { cause });
-    });
-    if (!response.ok) throw Error('Keys unavailable');
-    const { keys } = PublicKeys.parse(await response.json());
-    const jwk = keys.find(
-      (key) =>
-        key.kid === header.kid &&
-        key.alg === 'ES256' &&
-        key.kty === 'EC' &&
-        key.crv === 'P-256' &&
-        key.use === 'sig',
-    );
+    const jwk = await issuerKey(origin, header.kid, fetcher);
     if (
       !jwk ||
       !verify(
@@ -180,6 +185,7 @@ export async function verifyApproval(args: CreateCase, config: Config, fetcher: 
     hash([...approval.approvedFields].sort()) !== hash(Object.keys(args.data).sort())
   )
     throw new ApiError('CONSENT_SCOPE_MISMATCH', 403);
+  return approval;
 }
 export async function verifyReceipt(input: ReceiptSubmission, config: Config, fetcher: Fetcher) {
   const parsed = ReceiptClaims.safeParse(

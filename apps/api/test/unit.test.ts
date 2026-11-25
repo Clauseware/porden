@@ -8,6 +8,7 @@ import { loadConfig } from '../src/config';
 import { signer, verifyToken, sessionTools, hash } from '../src/security';
 import { createApp } from '../src/app';
 import type { store } from '../src/db/store';
+import { logger } from '../src/observability/logger';
 import { signedReceiptFixture, invalidReceiptFixture } from '@porden/sdk/fixtures';
 
 const directory = resolve(`tmp/unit-${crypto.randomUUID()}`);
@@ -139,7 +140,7 @@ describe('HTTP trust boundary', () => {
     );
   });
   test('provider network failures return a stable 502 response without leaking credentials', async () => {
-    const configured = { ...config, openrouterKey: 'unit-test-private-key' };
+    const configured = { ...config, openrouterKey: 'unit-test-private-key', model: 'test' };
     const unavailable = createApp(configured, db, signing, async () => {
       throw new TypeError('Connection refused');
     });
@@ -235,14 +236,16 @@ describe('consistent failure boundaries', () => {
     return payload;
   }
   async function provider(fetcher: Parameters<typeof createApp>[3]) {
-    return createApp({ ...config, openrouterKey: 'private-secret' }, db, signing, fetcher).request(
-      '/api/llm/chat/completions',
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ model: 'test', messages: [] }),
-      },
-    );
+    return createApp(
+      { ...config, openrouterKey: 'private-secret', model: 'test' },
+      db,
+      signing,
+      fetcher,
+    ).request('/api/llm/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: 'test', messages: [] }),
+    });
   }
   test('malformed JSON, validation, missing route, body limit and readiness use the same envelope', async () => {
     const app = createApp(config, db, signing);
@@ -272,10 +275,10 @@ describe('consistent failure boundaries', () => {
       },
       signing,
     );
-    await check(await notReady.request('/readyz'), 'NOT_READY', 503);
+    await check(await notReady.request('/ready'), 'NOT_READY', 503);
   });
   test('nested system codes are recorded without secrets or query bodies', async () => {
-    const logs = spyOn(console, 'error').mockImplementation(() => {});
+    const logs = spyOn(logger, 'error').mockImplementation(() => {});
     try {
       const cause = Object.assign(new Error('private-secret'), { code: 'EACCES' });
       await check(

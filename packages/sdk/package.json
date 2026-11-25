@@ -1,1 +1,1 @@
-{"name":"@porden/sdk","version":"0.1.0","private":true,"type":"module","exports":{".":"./src/index.ts","./fixtures":"./src/fixtures.ts"},"dependencies":{"@porden/contracts":"workspace:*"}}
+{"name":"@porden/sdk","version":"0.1.0","private":true,"license":"Apache-2.0","type":"module","exports":{".":"./src/index.ts","./delivery":"./src/delivery.ts","./fixtures":"./src/fixtures.ts"},"dependencies":{"@porden/contracts":"workspace:*"}}

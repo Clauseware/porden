@@ -2,12 +2,18 @@
 __pycache__/
 .pytest_cache/
 *.pem
-vendor/
+vendor/*
+!vendor/README.md
 tmp/
 node_modules/
 .next/
 *.tsbuildinfo
 .env
 .env.*
+infra/standalone/secrets/
+infra/standalone/backups/
 !.env.example
 !.env.*.example
+
+# Internal working docs (research, conformance audit, implementation notes); not published.
+docs/internal/

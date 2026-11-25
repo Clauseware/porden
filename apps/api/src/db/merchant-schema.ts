@@ -5,7 +5,9 @@ import type {
   TransferStatus,
   VerifiedReceipt,
   ApproveTransfer,
+  DeliveryGovernance,
 } from '@porden/contracts';
+import type { z } from 'zod';
 
 export const transfers = pgTable(
   'transfers',
@@ -16,6 +18,7 @@ export const transfers = pgTable(
     recipientOrigin: text('recipient_origin').notNull(),
     caseType: text('case_type').$type<'delivery_damage'>().notNull(),
     draftData: jsonb('draft_data').$type<DamageData>().notNull(),
+    governance: jsonb('governance').$type<z.infer<typeof DeliveryGovernance>>(),
     approvedData: jsonb('approved_data').$type<DamageData>(),
     status: text('status').$type<TransferStatus>().notNull().default('draft'),
     approvedFields: text('approved_fields')
@@ -53,4 +56,37 @@ export const transferEvents = pgTable(
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('transfer_events_transfer_time_idx').on(table.transferId, table.occurredAt)],
+);
+
+// Claims this merchant files for its customers. The platform keeps only a hash of the consented
+// details, so the merchant holds the exact consented data here until the case can no longer be
+// sent; then the data is cleared and only the record of the claim remains. The row is written
+// before the platform call, keyed by its request ID, so an uncertain filing that later reconciles
+// still has its consent. `handoff_id` is set once the platform's claim is known.
+export const merchantClaims = pgTable(
+  'merchant_claims',
+  {
+    requestId: uuid('request_id').primaryKey(),
+    handoffId: uuid('handoff_id').unique(),
+    // Hash of the filing request without its ID: a replay with different content is a conflict.
+    requestSha256: text('request_sha256').notNull(),
+    customerId: text('customer_id').notNull(),
+    orderReference: text('order_reference').notNull(),
+    consentData: jsonb('consent_data').$type<DamageData>(),
+    approvedFields: text('approved_fields').array().$type<ApproveTransfer['approvedFields']>(),
+    filedAt: timestamp('filed_at', { withTimezone: true }).notNull().defaultNow(),
+    consentClearedAt: timestamp('consent_cleared_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'merchant_claims_consent_check',
+      sql`(${table.consentData} IS NULL) = (${table.approvedFields} IS NULL) AND (${table.consentData} IS NULL) = (${table.consentClearedAt} IS NOT NULL)`,
+    ),
+    // Consent is only cleared for a claim that exists on the platform.
+    check(
+      'merchant_claims_cleared_check',
+      sql`${table.consentClearedAt} IS NULL OR ${table.handoffId} IS NOT NULL`,
+    ),
+    index('merchant_claims_customer_filed_idx').on(table.customerId, table.filedAt),
+  ],
 );

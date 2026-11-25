@@ -1,0 +1,113 @@
+.task-consumer {
+  max-width: 1000px;
+  margin: auto;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.task-consumer header,
+.task-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.task-consumer header button {
+  margin-left: auto;
+}
+.task-consumer h1,
+.task-consumer h2,
+.task-consumer h3 {
+  color: var(--text);
+}
+.task-consumer h1 {
+  font-size: 36px;
+}
+.task-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 24px 0;
+}
+.task-consumer label {
+  display: block;
+  margin: 14px 0;
+}
+.task-consumer input,
+.task-consumer select,
+.task-consumer textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  background: var(--bg);
+  color: var(--text);
+}
+.task-consumer form {
+  max-width: 680px;
+}
+.task-consumer button {
+  padding: 10px 16px;
+  border: 1px solid var(--lavender);
+  border-radius: 8px;
+  background: var(--lavender);
+  color: var(--on-lavender);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.task-consumer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.task-consumer .task-link {
+  background: transparent;
+  color: var(--lavender);
+  text-decoration: underline;
+  text-align: left;
+  padding: 4px;
+}
+.task-consumer a {
+  color: var(--lavender);
+  overflow-wrap: anywhere;
+}
+.task-error {
+  background: var(--danger-surface);
+  padding: 16px;
+  border-left: 4px solid var(--danger);
+}
+.task-notice {
+  background: var(--surface-raised);
+  padding: 16px;
+  border-left: 4px solid var(--lavender);
+}
+.task-consumer li {
+  margin: 12px 0;
+}
+.task-consumer footer {
+  margin-top: 40px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+.task-consumer fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 20px 0;
+}
+.task-consumer :focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .task-consumer {
+    padding: 0;
+  }
+  .task-card {
+    padding: 16px;
+  }
+  .task-consumer h1 {
+    font-size: 28px;
+  }
+}

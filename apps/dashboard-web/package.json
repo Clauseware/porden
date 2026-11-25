@@ -1,0 +1,17 @@
+{
+  "name": "@porden/dashboard-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4300",
+    "build": "next build",
+    "start": "next start -p 4300"
+  },
+  "dependencies": {
+    "@porden/contracts": "workspace:*",
+    "@porden/sdk": "workspace:*",
+    "next": "16.4.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}
