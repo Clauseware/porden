@@ -30,7 +30,7 @@
 
 Porden is a handoff service for work that crosses an organizational boundary. One organization sends a task with structured terms, the other accepts an exact version of those terms, and the Porden API records every step and decides whether the work is authorized.
 
-It addresses a gap in agent-to-agent work: when two organizations' agents agree on something, neither side has a shared, tamper-evident record of what was agreed, who approved it, or whether the terms changed afterwards.
+It is built for a common gap in agent-to-agent work. When agents from two organizations agree on something, the agreement often lives only in each side's own logs, with no shared record of what was agreed, who approved it, or whether the terms changed afterwards.
 
 You integrate Porden into an existing application or agent workflow through the TypeScript SDK or the REST API (`/api/v2`). Porden has no knowledge of your domain. Terms are a generic structure (goal, constraints, acceptance criteria, budget, evidence), and your application decides what they mean.
 
@@ -38,29 +38,24 @@ This repository contains the platform API, the SDK, an approval dashboard, and t
 
 ## Why Porden?
 
-Agents in different organizations can negotiate, but an agent's output is text. It can misread a policy, invent an amount, or act on terms that were replaced a moment ago. If that output is treated as a decision, a bad proposal becomes a bad action.
+An agent's output is text. It can misread a policy, invent an amount, or act on terms that have since been replaced. Porden keeps that text from becoming an action on its own: **agents propose, servers enforce.**
 
-Porden separates the two: **agents propose, servers enforce.**
+The reference applications apply this to a damaged-parcel claim:
 
-The reference applications show this with a damaged-parcel claim:
+1. **Filing.** The merchant's agent proposes a claim from the customer's message. The merchant server fills in the order facts and the price from its own records, then creates version 1.
+2. **Deciding.** The courier's agent proposes one decision: accept, clarify, counter-offer, reject or complete. The courier server checks the proposal against its policy and refuses anything the policy does not allow.
+3. **Changing terms.** A counter-offer becomes version 2. A human approver at the merchant must approve it, and the courier must then accept it. An open clarification or a pending revision blocks execution.
+4. **Executing.** The courier's case write is tied to the accepted version and to a hash of the data the customer agreed to share. Consent given for version 1 is refused once version 2 is current.
+5. **Verifying.** The courier's signed receipt states the agreed resolution. The merchant rejects a receipt whose resolution differs from the accepted terms.
 
-1. A customer describes the damage to the merchant's agent. The agent proposes a claim. The merchant server takes the order facts from its own records, prices the remedy, and creates handoff version 1.
-2. The courier's agent receives the courier server's policy evaluation and proposes one decision: accept, ask for clarification, counter-offer, reject or complete. The courier server re-evaluates the claim and refuses any decision its policy does not allow.
-3. A clarification blocks execution until the merchant side answers it.
-4. A counter-offer becomes version 2. Only a human approver at the merchant can approve it, and the courier must then accept version 2. Version 1 stays on record.
-5. The courier's case write is bound to the accepted version and to a hash of the data the customer consented to share. Consent given for version 1 is refused once version 2 is current.
-6. The courier's signed receipt states the agreed resolution, and the merchant rejects a receipt whose resolution differs from the accepted terms.
+| Porden core provides                                        | The reference applications provide                        |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
+| Versions, revisions, clarifications and the approval policy | The claim schema (`@porden/contracts/delivery-claims`)    |
+| Acceptance and the authorization decision                   | Merchant order facts, pricing and customer consent        |
+| Execution scopes, with reserve and settle                   | The courier's claims policy and counter-offer terms       |
+| Signed receipts, idempotency and reconciliation             | The agents, their prompts and their nsDeploy site actions |
 
-The work divides as follows:
-
-| Porden core provides                                           | The reference applications provide                           |
-| -------------------------------------------------------------- | ------------------------------------------------------------ |
-| Versions, revisions, clarifications and the approval policy    | The claim schema (`@porden/contracts/delivery-claims`)       |
-| Acceptance and the authorization decision                      | Merchant order facts, pricing and customer consent           |
-| Execution scopes, with reserve and settle                      | The courier's claims policy and counter-offer terms          |
-| Signed receipts, idempotency and reconciliation                | The agents, their prompts and their nsDeploy site actions    |
-
-The claim workflow is built entirely on the generic handoff contracts. Another domain would add its own schema, policy and actions the same way.
+The claim workflow uses only the generic handoff contracts. Another domain adds its own schema, policy and actions in the same way.
 
 ## Features
 
@@ -69,7 +64,7 @@ The claim workflow is built entirely on the generic handoff contracts. Another d
 - **Separate acceptance.** The receiver must accept the exact approved version before it can execute or complete the work.
 - **Reviewed revisions.** The receiver can propose changed terms. Authorization is blocked while a revision is pending, and a rejection leaves the approved terms intact.
 - **Clarifications.** The receiver can request missing information. An open clarification blocks authorization until the sender answers.
-- **Scoped execution.** Terms can list execution scopes: an action name and a SHA-256 hash of its parameters. The receiver reserves a scope before a protected write and settles it afterwards, so a scope cannot run twice or with different parameters.
+- **Scoped execution.** Terms can list execution scopes: an action name and a SHA-256 hash of its parameters. The receiver reserves a scope before a protected write and settles it with the outcome. Porden refuses a reservation when the parameters do not match the accepted terms, when another reservation is open, or when that scope has already completed. This protects a write only if the receiver's own system reserves first, because Porden does not perform the write.
 - **Signed receipts.** Every mutation returns an ES256 receipt binding the actor, organization, action, version and terms digest. Keys are published at `/.well-known/jwks.json`, and `verifyReceipt` checks a receipt against them.
 - **Idempotent writes.** Every mutation carries a `requestId`. An identical repeat returns the same receipt, and the same ID with different content returns a conflict.
 - **No silent retries.** The SDK reports an uncertain write as unknown and offers a read-only call to reconcile it.
