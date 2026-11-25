@@ -1,0 +1,20 @@
+Porden
+Copyright 2026 The Porden Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party software distributed with Porden
+--------------------------------------------
+
+nsDeploy browser runtime
+  Source:   https://github.com/cognizant-ai-lab/nsdeploy
+  Revision: 486ecf26aa8775963f9b765f894734bef1ac9817 (pinned in scripts/ensure-nsdeploy.ts)
+  Licence:  Apache License, Version 2.0
+  The runtime files under nsdeploy/runtime are redistributed unmodified. They are
+  served at /runtime/*, with the upstream licence at /runtime/LICENSE.txt, and are
+  copied into the API Docker image with the licence at vendor/nsdeploy/LICENSE.txt.
+  The upstream project publishes no NOTICE file and no separate copyright statement.
+
+  nsdeploy/runtime/generated/agent-runner.bundle.js includes js-sha256 0.11.1
+  (Copyright Chen, Yi-Cyuan 2014-2025, MIT License); its licence header is retained
+  in that file.

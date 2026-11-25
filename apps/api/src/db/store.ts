@@ -10,9 +10,13 @@ import {
   type CreateDraft,
   type ApproveTransfer,
   type CreateCase,
+  type DeliveryGovernance,
 } from '@porden/contracts';
+import type { z } from 'zod';
+import type { Resolution } from '@porden/contracts/delivery-claims';
 import { ApiError } from '../application/errors';
-import { hash, type signer } from '../security';
+import { hash, type signer, type Fetcher } from '../security';
+import { verifyDeliveryConsent } from '../services/delivery-authorization';
 import type { Config } from '../config';
 import { transfers, transferEvents } from './merchant-schema';
 import { cases, receipts, shipments } from './courier-schema';
@@ -36,6 +40,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       recipientOrigin: row.recipientOrigin,
       caseType: row.caseType,
       data: row.draftData,
+      ...(row.governance ? { governance: row.governance } : {}),
       status: row.status,
       approvedFields: row.approvedFields,
       receipt: row.verifiedReceipt,
@@ -73,6 +78,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           recipientOrigin: input.recipientOrigin,
           caseType: input.caseType,
           draftData: input.data,
+          governance: input.governance,
         })
         .returning();
       return draft(row);
@@ -85,7 +91,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return draft(row);
     },
-    async approve(id: string, fields: ApproveTransfer['approvedFields']) {
+    async approve(id: string, fields: ApproveTransfer['approvedFields'], fetcher: Fetcher = fetch) {
       return db.transaction(async (tx) => {
         const row = await owned(tx, id);
         if (row.status !== 'draft') throw new ApiError('REQUEST_CONFLICT', 409);
@@ -100,6 +106,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         };
         const payloadSha256 = hash(data),
           expiresAt = Date.now() + 10 * 60 * 1000;
+        if (row.governance) await verifyDeliveryConsent(config, fetcher, row.governance, data);
         const approval = signing.sign(
           {
             issuer: config.origin,
@@ -110,6 +117,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             payloadSha256,
             approvedFields: fields,
             expiresAt,
+            ...(row.governance ? { governance: row.governance } : {}),
           },
           'porden-approval+jwt',
         );
@@ -171,6 +179,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           claims.audience !== config.origin ||
           claims.caseType !== row.caseType ||
           claims.payloadSha256 !== row.payloadSha256 ||
+          hash(claims.governance ?? null) !== hash(row.governance ?? null) ||
           hash([...claims.approvedFields].sort()) !== hash([...row.approvedFields].sort())
         )
           throw new ApiError('RECEIPT_INVALID', 403);
@@ -197,7 +206,13 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         return receipt;
       });
     },
-    async createCase(args: CreateCase) {
+    async createCase(
+      args: CreateCase,
+      governance?: z.infer<typeof DeliveryGovernance>,
+      resolution?: Resolution,
+      // Runs under the transfer lock before a new case is inserted; throw to abort without writing.
+      beforeInsert?: () => Promise<void>,
+    ) {
       return db.transaction(async (tx) => {
         // Serialize a transfer across differing runtime request IDs as well as exact replays.
         await tx.execute(
@@ -208,6 +223,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           requestId: args.requestId,
           caseType: args.caseType,
           data: args.data,
+          ...(governance ? { governance } : {}),
         });
         const existing = await tx
           .select({ case: cases, receipt: receipts })
@@ -224,6 +240,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             throw new ApiError('REQUEST_CONFLICT', 409);
           return caseResponse(existing[0], true);
         }
+        if (beforeInsert) await beforeInsert();
         const [shipment] = await tx
           .select()
           .from(shipments)
@@ -251,6 +268,8 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             approvedFields: Object.keys(args.data),
             status: 'accepted',
             receivedAt,
+            ...(governance ? { governance } : {}),
+            ...(resolution ? { resolution } : {}),
           },
           'porden-receipt+jwt',
         );
@@ -295,6 +314,27 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         );
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return caseResponse(row, true);
+    },
+    /**
+     * Holds the transfer lock (the same lock a case write takes) while `settle` runs with the
+     * committed case, if any. A concurrent write either committed before this read or will see
+     * the settled reservation after it and abort, so the two can never disagree.
+     */
+    async whileTransferLocked<T>(
+      transferId: string,
+      settle: (committed: ReturnType<typeof caseResponse> | undefined) => Promise<T>,
+    ) {
+      return db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${config.peerOrigin + ':' + transferId},0))`,
+        );
+        const [row] = await tx
+          .select({ case: cases, receipt: receipts })
+          .from(cases)
+          .innerJoin(receipts, eq(receipts.caseId, cases.id))
+          .where(and(eq(cases.callerOrigin, config.peerOrigin), eq(cases.transferId, transferId)));
+        return settle(row ? caseResponse(row, true) : undefined);
+      });
     },
     async getReceipt(id: string) {
       const [row] = await db

@@ -17,6 +17,11 @@ import {
   RevisionDecision,
   FinishHandoff,
   HandoffQuery,
+  RequestClarification,
+  ResolveClarification,
+  VerifyAuthorization,
+  ReserveExecution,
+  SettleExecution,
 } from '@porden/contracts';
 import { ApiError } from '../application/errors';
 import { hash, type signer } from '../security';
@@ -50,7 +55,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
     )
       throw new ApiError('UNAUTHORIZED_ACTION', 403);
   }
-  function requireReceiver(principal: Principal, row: Row) {
+  function requireReceiver(principal: Principal, row: Pick<Row, 'receiverOrganizationId'>) {
     if (row.receiverOrganizationId !== principal.organizationId)
       throw new ApiError('UNAUTHORIZED_ACTION', 403);
   }
@@ -76,7 +81,12 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
     requestId: string,
     action: string,
     input: unknown,
-    change: (tx: Transaction) => Promise<{ row: Row; version: number; note?: string }>,
+    change: (tx: Transaction) => Promise<{
+      row: Row;
+      version: number;
+      note?: string;
+      event?: HandoffReceiptClaims['event'];
+    }>,
   ) {
     const fingerprint = hash({ action, input });
     const receipt = await db.transaction(async (tx) => {
@@ -89,7 +99,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
         await owned(tx, principal, previous.handoffId);
         return { ...previous.claims, signedReceipt: previous.signedReceipt };
       }
-      const { row, version: value, note } = await change(tx);
+      const { row, version: value, note, event } = await change(tx);
       const terms = await version(tx, row.id, value);
       const claims: HandoffReceiptClaims = {
         receiptId: randomUUID(),
@@ -104,6 +114,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
         termsSha256: terms.termsSha256,
         occurredAt: new Date().toISOString(),
         ...(note ? { note } : {}),
+        ...(event ? { event } : {}),
       };
       const signedReceipt = signing.sign(claims, 'porden-handoff-receipt+jwt');
       await tx.insert(handoffReceipts).values({
@@ -147,6 +158,61 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
       createdBy: principal.id,
     });
   }
+  async function requireIdle(tx: Transaction, principal: Principal, id: string) {
+    // A timeout cannot prove that a consumer write failed, so reservations never expire automatically.
+    const state = await detail(tx, principal, id);
+    if (state.executions.some((item) => item.status === 'reserved'))
+      throw new ApiError('EXECUTION_RESERVED', 409);
+    return state;
+  }
+  function authorization(
+    state: HandoffDetail,
+    value: number,
+    scope?: z.infer<typeof VerifyAuthorization>,
+  ): z.infer<typeof HandoffAuthorization> {
+    const terms = state.versions.find((item) => item.version === value);
+    if (!terms) throw new ApiError('NOT_FOUND', 404);
+    let reasonCode: z.infer<typeof HandoffAuthorization>['reasonCode'] = 'AUTHORIZED';
+    if (value !== state.currentVersion) reasonCode = 'STALE_VERSION';
+    else if (state.status === 'awaiting_approval') reasonCode = 'AWAITING_APPROVAL';
+    else if (['cancelled', 'rejected', 'completed', 'failed'].includes(state.status))
+      reasonCode = 'TERMINAL_STATE';
+    else if (
+      state.status !== 'accepted' ||
+      state.acceptedVersion !== value ||
+      state.approvedVersion !== value
+    )
+      reasonCode = 'ACCEPTANCE_REQUIRED';
+    else if (state.clarifications.some((item) => !item.response))
+      reasonCode = 'CLARIFICATION_REQUIRED';
+    else if (state.executions.some((item) => item.status === 'reserved'))
+      reasonCode = 'EXECUTION_RESERVED';
+    else if (
+      scope &&
+      !terms.terms.executionScopes?.some(
+        (item) => item.action === scope.action && item.parametersSha256 === scope.parametersSha256,
+      )
+    )
+      reasonCode = 'SCOPE_MISMATCH';
+    else if (
+      scope &&
+      state.executions.some(
+        (item) =>
+          item.status === 'completed' &&
+          item.action === scope.action &&
+          item.parametersSha256 === scope.parametersSha256,
+      )
+    )
+      reasonCode = 'EXECUTION_ALREADY_COMPLETED';
+    return {
+      handoffId: state.id,
+      version: value,
+      eligible: reasonCode === 'AUTHORIZED',
+      status: state.status,
+      reasonCode,
+      termsSha256: terms.termsSha256,
+    };
+  }
   const api = {
     async ready() {
       await queries.ready();
@@ -170,6 +236,8 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
               versions: _versions,
               revisions: _revisions,
               receipts: _receipts,
+              clarifications: _clarifications,
+              executions: _executions,
               ...summary
             } = await detail(tx, principal, id);
             items.push(summary);
@@ -272,6 +340,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
         const row = await owned(tx, principal, id, true);
         requireSender(principal, row);
         requireVersion(row, input.version);
+        await requireIdle(tx, principal, id);
         if (!['draft', 'approved', 'accepted', 'awaiting_approval'].includes(row.status))
           throw new ApiError('REQUEST_CONFLICT', 409);
         if (row.pendingRevisionId)
@@ -295,6 +364,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
           const row = await owned(tx, principal, id, true);
           requireReceiver(principal, row);
           requireVersion(row, input.version);
+          await requireIdle(tx, principal, id);
           if (row.status !== 'approved' && row.status !== 'accepted')
             throw new ApiError('REQUEST_CONFLICT', 409);
           if (hash(input.terms) === (await version(tx, id, input.version)).termsSha256)
@@ -378,6 +448,20 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
         const row = await owned(tx, principal, id, true);
         requireReceiver(principal, row);
         requireVersion(row, input.version);
+        const state = await requireIdle(tx, principal, id);
+        if (state.clarifications.some((item) => !item.response))
+          throw new ApiError('CLARIFICATION_REQUIRED', 409);
+        const terms = await version(tx, id, input.version);
+        const indices = new Set(input.criterionResults.map((item) => item.criterionIndex));
+        if (
+          input.criterionResults.length !== terms.terms.acceptanceCriteria.length ||
+          indices.size !== input.criterionResults.length ||
+          input.criterionResults.some(
+            (item) => item.criterionIndex >= terms.terms.acceptanceCriteria.length,
+          ) ||
+          (input.status === 'completed' && input.criterionResults.some((item) => !item.met))
+        )
+          throw new ApiError('INVALID_INPUT', 400);
         if (
           row.status !== 'accepted' ||
           row.approvedVersion !== input.version ||
@@ -388,6 +472,7 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
           row: await update(tx, id, { status: input.status }),
           version: input.version,
           note: input.note,
+          event: { type: 'completion', criterionResults: input.criterionResults },
         };
       });
     },
@@ -396,29 +481,146 @@ export function handoffService(client: SQL, signing: ReturnType<typeof signer>) 
       id: string,
       value: number,
     ): Promise<z.infer<typeof HandoffAuthorization>> {
-      const row = await api.get(principal, id),
-        terms = row.versions.find((item) => item.version === value);
-      if (!terms) throw new ApiError('NOT_FOUND', 404);
-      const reasonCode =
-        row.status === 'awaiting_approval'
-          ? 'AWAITING_APPROVAL'
-          : value !== row.currentVersion
-            ? 'STALE_VERSION'
-            : ['cancelled', 'rejected', 'completed', 'failed'].includes(row.status)
-              ? 'TERMINAL_STATE'
-              : row.status !== 'accepted' ||
-                  row.acceptedVersion !== value ||
-                  row.approvedVersion !== value
-                ? 'ACCEPTANCE_REQUIRED'
-                : 'AUTHORIZED';
-      return {
-        handoffId: id,
-        version: value,
-        eligible: reasonCode === 'AUTHORIZED',
-        status: row.status,
-        reasonCode,
-        termsSha256: terms.termsSha256,
-      };
+      return authorization(await api.get(principal, id), value);
+    },
+    async verifyAuthorization(
+      principal: Principal,
+      id: string,
+      input: z.infer<typeof VerifyAuthorization>,
+    ) {
+      const state = await api.get(principal, id);
+      requireReceiver(principal, state);
+      return authorization(state, input.version, input);
+    },
+    requestClarification(
+      principal: Principal,
+      id: string,
+      input: z.infer<typeof RequestClarification>,
+    ) {
+      return mutate(
+        principal,
+        input.requestId,
+        'clarification_requested',
+        { id, ...input },
+        async (tx) => {
+          const row = await owned(tx, principal, id, true);
+          requireReceiver(principal, row);
+          requireVersion(row, input.version);
+          await requireIdle(tx, principal, id);
+          if (!['draft', 'approved', 'accepted', 'awaiting_approval'].includes(row.status))
+            throw new ApiError('REQUEST_CONFLICT', 409);
+          return {
+            row,
+            version: input.version,
+            event: {
+              type: 'clarification_requested',
+              clarification: {
+                id: randomUUID(),
+                version: input.version,
+                missingInformation: input.missingInformation,
+                reason: input.reason,
+              },
+            },
+          };
+        },
+      );
+    },
+    resolveClarification(
+      principal: Principal,
+      id: string,
+      input: z.infer<typeof ResolveClarification>,
+    ) {
+      return mutate(
+        principal,
+        input.requestId,
+        'clarification_resolved',
+        { id, ...input },
+        async (tx) => {
+          const row = await owned(tx, principal, id, true);
+          requireSender(principal, row);
+          requireVersion(row, input.version);
+          const state = await requireIdle(tx, principal, id);
+          if (
+            !['draft', 'approved', 'accepted', 'awaiting_approval'].includes(row.status) ||
+            !state.clarifications.some(
+              (item) => item.id === input.clarificationId && !item.response,
+            )
+          )
+            throw new ApiError('REQUEST_CONFLICT', 409);
+          return {
+            row,
+            version: input.version,
+            event: {
+              type: 'clarification_resolved',
+              clarificationId: input.clarificationId,
+              response: input.response,
+            },
+          };
+        },
+      );
+    },
+    reserveExecution(principal: Principal, id: string, input: z.infer<typeof ReserveExecution>) {
+      return mutate(
+        principal,
+        input.requestId,
+        'execution_reserved',
+        { id, ...input },
+        async (tx) => {
+          const row = await owned(tx, principal, id, true);
+          requireReceiver(principal, row);
+          const state = await detail(tx, principal, id);
+          const result = authorization(state, input.version, input);
+          if (!result.eligible) throw new ApiError(result.reasonCode, 409);
+          return {
+            row,
+            version: input.version,
+            event: {
+              type: 'execution_reserved',
+              execution: {
+                id: randomUUID(),
+                version: input.version,
+                principalId: principal.id,
+                operationReference: input.operationReference,
+                action: input.action,
+                parametersSha256: input.parametersSha256,
+                status: 'reserved',
+              },
+            },
+          };
+        },
+      );
+    },
+    settleExecution(principal: Principal, id: string, input: z.infer<typeof SettleExecution>) {
+      return mutate(
+        principal,
+        input.requestId,
+        'execution_settled',
+        { id, ...input },
+        async (tx) => {
+          const row = await owned(tx, principal, id, true);
+          requireReceiver(principal, row);
+          requireVersion(row, input.version);
+          const state = await detail(tx, principal, id);
+          const execution = state.executions.find((item) => item.id === input.executionId);
+          if (
+            !execution ||
+            execution.version !== input.version ||
+            execution.principalId !== principal.id ||
+            execution.status !== 'reserved'
+          )
+            throw new ApiError('REQUEST_CONFLICT', 409);
+          return {
+            row,
+            version: input.version,
+            event: {
+              type: 'execution_settled',
+              executionId: input.executionId,
+              outcome: input.outcome,
+              resultReference: input.resultReference,
+            },
+          };
+        },
+      );
     },
     async pending(principal: Principal) {
       if (principal.kind !== 'human' || principal.role !== 'approver')

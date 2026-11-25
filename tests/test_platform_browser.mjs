@@ -2,6 +2,10 @@
 // No inference provider or external task execution is used.
 import assert from 'node:assert/strict';
 import { SQL } from 'bun';
+import { Hono } from 'hono';
+import { agentRoutes } from '../apps/api/src/agents.ts';
+import { loadConfig } from '../apps/api/src/config.ts';
+import { CreateHandoff, HandoffMutation } from '../packages/contracts/src/handoffs.ts';
 import { generateKeyPairSync } from 'node:crypto';
 import { mkdirSync,writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -9,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { loadPlatformConfig } from '../apps/api/src/platform-config.ts';
 import { platformAuth } from '../apps/api/src/platform-auth.ts';
-import { platformStore } from '../apps/api/src/db/platform-store.ts';
+import { handoffService } from '../apps/api/src/services/handoffs.ts';
 import { migratePlatform } from '../apps/api/src/db/platform-migrate.ts';
 import { provisionPlatform } from '../apps/api/src/db/platform-provision.ts';
 import { createPlatformApp } from '../apps/api/src/platform-app.ts';
@@ -19,13 +23,14 @@ import { createHandoffClient } from '../packages/sdk/src/index.ts';
 const url=process.env.PORDEN_TEST_DATABASE_URL;
 assert.ok(url,'PORDEN_TEST_DATABASE_URL must name a disposable database with CREATE SCHEMA permission');
 const {chromium}=await import(process.env.HANDOFF_PLAYWRIGHT_MODULE||'playwright');
+const live=process.env.PORDEN_PLATFORM_LIVE==='1';
 const schema='porden_platform_browser_'+crypto.randomUUID().replaceAll('-','');
 const proof=resolve('tmp/platform-browser-proof',new Date().toISOString().replace(/[:.]/g,'-'));
 mkdirSync(proof,{recursive:true});
 const origins={a:'http://localhost:4100',b:'http://localhost:4200',dashboard:'http://localhost:4300'};
 const orgA=crypto.randomUUID(),orgB=crypto.randomUUID(),orgC=crypto.randomUUID();
 const password='platform-browser-password',tokenA='a'.repeat(40),tokenB='b'.repeat(40);
-const admin=new SQL(url),processes=[],contexts=[],results=[],browserErrors=[];
+const admin=new SQL(url),processes=[],contexts=[],results=[],browserErrors=[],assetServers=[];
 let database,server,browser;
 const key=()=>({requestId:crypto.randomUUID()});
 const terms={goal:'Purchase replacement supplies',constraints:['Do not exceed authorized budget'],acceptanceCriteria:['Provide a purchase receipt'],budget:{amountMinor:50000,currency:'USD'}};
@@ -37,7 +42,7 @@ async function run(name,fn){
   catch(error){failure=error;results.push({name,passed:false,error:String(error),milliseconds:Date.now()-started});console.error('FAIL',name,error);
     for(let index=0;index<contexts.length;index++)for(const page of contexts[index].pages())await page.screenshot({path:resolve(proof,`failure-${index}.png`),fullPage:true}).catch(()=>{});
   }
-  writeFileSync(resolve(proof,'results.json'),JSON.stringify({inference:false,results},null,2));
+  writeFileSync(resolve(proof,'results.json'),JSON.stringify({inference:live,results},null,2));
   if(failure)throw failure;
 }
 async function page(){const context=await browser.newContext();contexts.push(context);const page=await context.newPage();page.setDefaultTimeout(20000);page.on('pageerror',error=>browserErrors.push(error.message));return page;}
@@ -65,8 +70,12 @@ try{
     {id:crypto.randomUUID(),organizationId:orgA,name:'Company A agent',login:'a.agent',kind:'integration',role:'member',secret:tokenA},
     {id:crypto.randomUUID(),organizationId:orgB,name:'Company B agent',login:'b.agent',kind:'integration',role:'member',secret:tokenB},
   ]});
-  const signing=signer(config),app=createPlatformApp(config,platformStore(database,signing),platformAuth(database,config),signing);
+  const signing=signer(config),app=createPlatformApp(config,handoffService(database,signing),platformAuth(database,config),signing);
   server=Bun.serve({hostname:'127.0.0.1',port:5300,fetch:app.fetch});
+  for(const [role,origin,peerOrigin,port] of [['merchant',origins.a,origins.b,5100],['courier',origins.b,origins.a,5200]]){
+    const assets=new Hono();agentRoutes(assets,loadConfig({ORGANIZATION_ROLE:role,PUBLIC_ORIGIN:origin,PEER_ORIGIN:peerOrigin,DATABASE_URL:url,SESSION_SECRET:'s'.repeat(32),PARTNER_SECRET:'p'.repeat(32),DEMO_PASSWORD:password,SIGNING_KEY_PATH:keyPath}));
+    assetServers.push(Bun.serve({hostname:'127.0.0.1',port,fetch:assets.fetch}));
+  }
   for(const [name,port] of [['merchant',4100],['courier',4200],['dashboard',4300]]){
     const proc=spawn('node',[resolve('node_modules/next/dist/bin/next'),'start',resolve(`apps/${name}-web`),'-p',String(port)],{windowsHide:true,stdio:'ignore'});processes.push(proc);
   }
@@ -98,15 +107,77 @@ try{
     await selectTask(b,'Purchase replacement supplies');await status(b,'approved');
     await b.getByRole('button',{name:'Accept version 1',exact:true}).click();await status(b,'accepted');
   });
+  await run('receiver clarification blocks execution until the sender supplies information',async()=>{
+    await b.getByLabel('Missing information',{exact:true}).fill('Which depot should receive the parcel?');
+    await b.getByLabel('Why execution is blocked',{exact:true}).fill('Cannot route without a destination depot');
+    await b.getByRole('button',{name:'Request clarification',exact:true}).click();
+    await b.getByRole('heading',{name:'Blocking clarification',exact:true}).waitFor();
+    assert.equal((await agentB.getAuthorization(firstId,1)).reasonCode,'CLARIFICATION_REQUIRED');
+    await a.getByLabel('Clarification response',{exact:true}).fill('Use the north depot; authorized terms are unchanged.');
+    await a.getByRole('button',{name:'Resolve clarification',exact:true}).click();
+    await b.getByText('Sender response: Use the north depot; authorized terms are unchanged.',{exact:true}).waitFor();
+    assert.equal((await agentB.getAuthorization(firstId,1)).eligible,true);
+  });
+  async function bridgeCreate(args,requestId){
+    await a.evaluate(async ({args,requestId})=>{
+      const {ActionBridgeClient}=await import('/runtime/action-transport.js');
+      window.__platformBridgeOutcome=undefined;
+      const client=new ActionBridgeClient(location.origin+'/action-bridge.html');
+      void (async()=>{try{await client.connect(true);const value=await client.request('execute',{name:'porden_handoff',args,requestId});window.__platformBridgeOutcome={value};}catch(error){window.__platformBridgeOutcome={error:String(error)};}finally{client.dispose();}})();
+    },{args,requestId});
+    const opened=a.waitForEvent('popup');await a.getByRole('button',{name:'Open action site',exact:true}).click();
+    const popup=await opened;await popup.getByRole('button',{name:'Confirm actions',exact:true}).click();
+    await a.waitForFunction(()=>window.__platformBridgeOutcome);
+    const outcome=await a.evaluate(()=>window.__platformBridgeOutcome);
+    assert.equal(outcome.error,undefined);return HandoffMutation.parse(outcome.value);
+  }
+  await run('official nsDeploy popup bridge creates and reconciles a platform handoff with runtime request IDs',async()=>{
+    const args={operation:'create',receiverOrganizationId:orgB,terms:{...terms,goal:'Bridge integration proof'}};
+    const requestId='official-platform:'+crypto.randomUUID()+':0';
+    const result=await bridgeCreate(args,requestId);
+    assert.equal(result.handoff.status,'draft');
+    const reconciliation=await a.request.get(origins.a+'/api/v2/operations/'+result.receipt.requestId);
+    assert.equal(reconciliation.status(),200);assert.equal((await reconciliation.json()).handoff.id,result.handoff.id);
+    assert.deepEqual(await agentA.verifyReceipt(result.receipt.signedReceipt),Object.fromEntries(Object.entries(result.receipt).filter(([key])=>key!=='signedReceipt')));
+    const replay=await bridgeCreate(args,requestId);assert.equal(replay.receipt.signedReceipt,result.receipt.signedReceipt);
+  });
+  if(live)await run('live model tool call executes through the official nsDeploy popup bridge',async()=>{
+    const model=process.env.OPENROUTER_MODEL||process.env.openrouter_model||'',apiKey=process.env.OPENROUTER_API_KEY||process.env.openrouter_api_key||'';
+    assert.ok(model.endsWith(':free')&&apiKey,'A configured free model and provider key are required');
+    const catalog=await a.evaluate(async()=>{
+      const {ActionBridgeClient}=await import('/runtime/action-transport.js');const client=new ActionBridgeClient(location.origin+'/action-bridge.html');
+      try{await client.connect();return await client.request('catalog');}finally{client.dispose();}
+    });
+    const action=catalog.find(item=>item.name==='porden_handoff');assert.ok(action);
+    // This test exercises creation; the shared multi-operation catalog cannot require terms globally.
+    const parameters={...action.inputSchema,required:['operation','receiverOrganizationId','terms'],properties:{
+      operation:{...action.inputSchema.properties.operation,enum:['create']},
+      receiverOrganizationId:{...action.inputSchema.properties.receiverOrganizationId,enum:[orgB]},
+      terms:action.inputSchema.properties.terms,
+    }};
+    const requestedAction={operation:'create',receiverOrganizationId:orgB,terms:{goal:'Live bridge integration proof',constraints:['No external task execution'],acceptanceCriteria:['Record a signed handoff receipt']}};
+    const response=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(90000),headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:'Call porden_handoff exactly once with this nested argument structure: '+JSON.stringify(requestedAction)+'. Keep goal, constraints, and acceptanceCriteria inside terms. This is synthetic validation; do not claim approval or completion.'}],tools:[{type:'function',function:{name:action.name,description:action.description,parameters}}],tool_choice:{type:'function',function:{name:action.name}}})});
+    assert.ok(response.ok,'Provider returned HTTP '+response.status);
+    const completion=await response.json(),calls=completion.choices?.[0]?.message?.tool_calls;
+    assert.equal(calls?.length,1);assert.equal(calls[0].function.name,'porden_handoff');
+    const args=JSON.parse(calls[0].function.arguments);assert.equal(args.operation,'create');assert.equal(args.receiverOrganizationId,orgB);
+    CreateHandoff.parse({requestId:crypto.randomUUID(),receiverOrganizationId:orgB,terms:args.terms});
+    const result=await bridgeCreate(args,'live-platform:'+crypto.randomUUID()+':0');
+    assert.equal(result.handoff.status,'draft');assert.equal((await agentA.getAuthorization(result.handoff.id,1)).eligible,false);
+    await agentA.verifyReceipt(result.receipt.signedReceipt);
+    const [{count}]=await database`SELECT count(*)::int AS count FROM handoffs WHERE id=${result.handoff.id}`;assert.equal(count,1);
+    writeFileSync(resolve(proof,'live-bridge-result.json'),JSON.stringify({model,inferenceCalls:1,handoffId:result.handoff.id,receiptId:result.receipt.receiptId,status:result.handoff.status},null,2));
+  });
   await run('$550 proposal blocks execution and dashboard authorizes only the exact revision',async()=>{
     await b.getByRole('button',{name:'Propose revision',exact:true}).click();await status(b,'awaiting_approval');
     assert.equal((await agentB.getAuthorization(firstId,2)).eligible,false);
-    await assert.rejects(agentB.finishHandoff(firstId,{...key(),version:2,status:'completed',note:'Must be blocked'}),error=>error.status===409);
+    await assert.rejects(agentB.finishHandoff(firstId,{...key(),version:2,status:'completed',criterionResults:[{criterionIndex:0,met:true}],note:'Must be blocked'}),error=>error.status===409);
     await dashboardA.getByRole('heading',{name:'Proposed terms · version 2',exact:true}).waitFor();
     await dashboardA.getByText('USD 550.00',{exact:false}).first().waitFor();
     await decide(dashboardA,firstId,2);await status(b,'approved');
     await b.getByRole('button',{name:'Accept version 2',exact:true}).click();await status(b,'accepted');
     await b.getByTestId('execution-authorization').filter({hasText:'Execution authorization: authorized'}).waitFor();
+    await b.getByLabel('Criterion 1 result',{exact:true}).selectOption('met');
     await b.getByLabel('Outcome note',{exact:true}).fill('Purchased under the newly authorized $550 budget');await b.getByRole('button',{name:'Record outcome',exact:true}).click();await status(b,'completed');
     const row=await agentA.getHandoff(firstId);assert.equal(row.versions[0].terms.budget.amountMinor,50000);assert.equal(row.versions[1].terms.budget.amountMinor,55000);assert.equal(row.versions[0].terms.evidence[0].source.url,'https://example.com/supplies?exact=1#stock');
   });
@@ -117,6 +188,7 @@ try{
     await dashboardLogin(dashboardB,'b.approver',returnId);await decide(dashboardB,returnId,1);
     await selectTask(a,'Return purchase report');await status(a,'approved');await a.getByRole('button',{name:'Accept version 1',exact:true}).click();await status(a,'accepted');
     await a.getByTestId('execution-authorization').filter({hasText:'Execution authorization: authorized'}).waitFor();
+    await a.getByLabel('Criterion 1 result',{exact:true}).selectOption('met');
     await a.getByLabel('Outcome note',{exact:true}).fill('Report received');await a.getByRole('button',{name:'Record outcome',exact:true}).click();await status(a,'completed');
     const history=await agentA.getWorkflowHistory((await agentA.getHandoff(firstId)).workflowId);assert.equal(history.items.length,2);assert.notEqual(history.items[0].receipts[0].receiptId,history.items[1].receipts[0].receiptId);
     await dashboardA.reload();await dashboardA.getByRole('heading',{name:'Linked workflow',exact:true}).waitFor();await dashboardA.getByRole('link',{name:/Company B → Company A: Return purchase report/}).waitFor();
@@ -184,6 +256,7 @@ try{
 }finally{
   await browser?.close();
   for(const proc of processes)if(proc.exitCode===null){const exited=once(proc,'exit');proc.kill();await exited;}
+  for(const assets of assetServers)await assets.stop(true);
   await server?.stop(true);await database?.close();await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);await admin.close();
 }
 console.log(`${results.filter(result=>result.passed).length} passed; ${results.filter(result=>!result.passed).length} failed; evidence: ${proof}`);

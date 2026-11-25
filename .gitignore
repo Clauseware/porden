@@ -10,5 +10,10 @@ node_modules/
 *.tsbuildinfo
 .env
 .env.*
+infra/standalone/secrets/
+infra/standalone/backups/
 !.env.example
 !.env.*.example
+
+# Internal working docs (research, conformance audit, implementation notes); not published.
+docs/internal/

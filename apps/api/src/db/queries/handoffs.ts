@@ -103,6 +103,39 @@ export function handoffQueries(db: Database) {
           decidedAt: item.decidedAt?.toISOString() || null,
         })),
         receipts: receipts.map((item) => ({ ...item.claims, signedReceipt: item.signedReceipt })),
+        clarifications: receipts.flatMap(({ claims }) => {
+          if (claims.event?.type !== 'clarification_requested') return [];
+          const clarification = claims.event.clarification;
+          const resolution = receipts.find(
+            ({ claims: other }) =>
+              other.event?.type === 'clarification_resolved' &&
+              other.event.clarificationId === clarification.id,
+          )?.claims.event;
+          return [
+            {
+              ...clarification,
+              ...(resolution?.type === 'clarification_resolved'
+                ? { response: resolution.response }
+                : {}),
+            },
+          ];
+        }),
+        executions: receipts.flatMap(({ claims }) => {
+          if (claims.event?.type !== 'execution_reserved') return [];
+          const execution = claims.event.execution;
+          const settlement = receipts.find(
+            ({ claims: other }) =>
+              other.event?.type === 'execution_settled' && other.event.executionId === execution.id,
+          )?.claims.event;
+          return [
+            {
+              ...execution,
+              ...(settlement?.type === 'execution_settled'
+                ? { status: settlement.outcome, resultReference: settlement.resultReference }
+                : {}),
+            },
+          ];
+        }),
       };
     },
     async organizations() {

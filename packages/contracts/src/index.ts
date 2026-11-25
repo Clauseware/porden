@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { Resolution } from './delivery-claims';
+import { HandoffReceiptClaims } from './handoffs';
 export * from './handoffs';
 
 export const Origin = z.url().refine(value => {
@@ -15,7 +17,8 @@ export const Field = z.enum(['orderReference', 'damageDescription', 'deliveryAdd
 export const Fields = z.array(Field).min(2).max(3).refine(fields =>
   new Set(fields).size === fields.length && fields.includes('orderReference') && fields.includes('damageDescription'));
 export const TransferStatus = z.enum(['draft', 'approved', 'submitted', 'accepted', 'rejected', 'cancelled', 'unknown']);
-export const CreateDraft = z.strictObject({recipientOrigin: Origin, caseType: z.literal('delivery_damage'), data: DamageData});
+export const DeliveryGovernance = z.strictObject({handoffId: z.uuid(), version: z.number().int().positive()});
+export const CreateDraft = z.strictObject({recipientOrigin: Origin, caseType: z.literal('delivery_damage'), data: DamageData, governance: DeliveryGovernance.optional()});
 export const ApproveTransfer = z.strictObject({approvedFields: Fields});
 export const ActionArguments = z.strictObject({
   transferId: z.uuid(), caseType: z.literal('delivery_damage'), data: DamageData,
@@ -27,11 +30,29 @@ export const ReceiptClaims = z.strictObject({
   caseId: z.string().min(1), receiptId: z.uuid(), caseType: z.literal('delivery_damage'),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/), approvedFields: Fields,
   status: z.literal('accepted'), receivedAt: z.iso.datetime(),
+  governance: DeliveryGovernance.optional(), resolution: Resolution.optional(),
 });
+/** Public receipt verification: anyone may submit a receipt; only configured issuers are trusted. */
+export const VerifyReceiptRequest = z.strictObject({receipt: z.string().min(1).max(16384)});
+export const ReceiptVerification = z.discriminatedUnion('valid', [
+  z.strictObject({
+    valid: z.literal(true), issuer: Origin, keyId: z.string(),
+    receipt: z.discriminatedUnion('kind', [
+      z.strictObject({kind: z.literal('delivery_case'), claims: ReceiptClaims}),
+      z.strictObject({kind: z.literal('handoff'), claims: HandoffReceiptClaims}),
+    ]),
+  }),
+  z.strictObject({
+    valid: z.literal(false),
+    reasonCode: z.enum(['MALFORMED', 'UNSUPPORTED_TYPE', 'UNTRUSTED_ISSUER', 'SIGNATURE_INVALID', 'CLAIMS_INVALID']),
+  }),
+]);
+export type ReceiptVerification = z.infer<typeof ReceiptVerification>;
 export const ApprovalClaims = z.strictObject({
   issuer: Origin, audience: Origin, transferId: z.uuid(), subject: z.literal('demo-user'),
   caseType: z.literal('delivery_damage'), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
   approvedFields: Fields, expiresAt: z.number().int().positive(),
+  governance: DeliveryGovernance.optional(),
 });
 export const CaseResponse = z.strictObject({
   caseId: z.string(), receiptId: z.uuid(), receipt: z.string(), requestId: z.string(),
@@ -78,6 +99,14 @@ export const Session = z.strictObject({customerId: z.literal('demo-user'), csrf:
 export const ErrorResponse = z.object({error:z.object({code:z.string().min(1),message:z.string().optional(),requestId:z.uuid().optional()})});
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 export const errorMessages: Record<string,string> = {
+  CLARIFICATION_REQUIRED:'Essential information is missing. Resolve the clarification before execution.',
+  SCOPE_MISMATCH:'The action parameters differ from the authorized terms.',
+  EXECUTION_RESERVED:'An execution is unresolved. Reconcile it before changing this handoff.',
+  EXECUTION_ALREADY_COMPLETED:'This action has already been completed.',
+  AUTHORIZATION_UNAVAILABLE:'Authorization could not be verified. Check the saved operation before submitting again.',
+  AUTHORIZED:'The action is authorized.', STALE_VERSION:'The handoff version has changed.',
+  AWAITING_APPROVAL:'The revised terms require approval.', ACCEPTANCE_REQUIRED:'The exact version requires approval and receiver acceptance.',
+  TERMINAL_STATE:'This handoff is already closed.',
   OUTCOME_UNKNOWN:'The write outcome is unknown. Check the saved operation before submitting anything else.',
   SESSION_CHANGED:'The signed-in account changed. Sign in again before continuing.',
   INVALID_INPUT:'Check the supplied details and try again.', INVALID_RESPONSE:'The service returned an invalid response. Check the transfer before trying again.',
@@ -86,10 +115,11 @@ export const errorMessages: Record<string,string> = {
   CSRF_MISMATCH:'Your session has changed. Sign in again before continuing.', REQUEST_CONFLICT:'This transfer has already changed. Check its current status.',
   CONSENT_REQUIRED:'Sharing approval is required or has expired. Review a new transfer.',
   CONSENT_SCOPE_MISMATCH:'The proposed details differ from your approval. The transfer was stopped.',
-  RECIPIENT_NOT_ALLOWED:'This recipient is not allowed.', NOT_FOUND:'The requested record was not found.',
+  RECIPIENT_NOT_ALLOWED:'This recipient is not allowed.', RATE_LIMITED:'Too many requests. Wait a minute and try again.', VERIFICATION_UNAVAILABLE:'The signing keys of the issuing site could not be reached, so this receipt was not checked. Try again later.', POLICY_VIOLATION:'The proposed decision is not allowed by the courier claims policy.', NOT_FOUND:'The requested record was not found.',
   PAYLOAD_TOO_LARGE:'The request is too large. Shorten the case details.', NOT_READY:'The service is not ready. Try again later.',
   DATABASE_UNAVAILABLE:'Case storage is unavailable. Check the transfer before trying again.',
   PROVIDER_NOT_CONFIGURED:'The AI service is not configured. Contact the demo operator.',
+  MODEL_NOT_ALLOWED:'This site only runs its configured AI model. Reload the page and try again.',
   PROVIDER_CONNECTION_FAILED:'The server could not connect to the AI provider. Contact the demo operator.',
   PROVIDER_AUTHENTICATION_FAILED:'The AI provider rejected the server credentials. Contact the demo operator.',
   PROVIDER_CREDITS_EXHAUSTED:'The AI provider account needs attention. Contact the demo operator.',

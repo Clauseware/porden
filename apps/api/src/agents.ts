@@ -75,9 +75,11 @@ export function agentRoutes(app: Hono, config: Config) {
         description: 'Versioned Porden task handoffs',
       },
     ],
+    // Spec §4 default inference: this site's same-origin route, paid for by the site and
+    // authenticated by the visitor's site session. BYOK is not offered, so no byok_router.
     llm_router: {
-      base_url: 'https://openrouter.ai/api/v1',
-      byok_router: 'https://openrouter.ai/api/v1',
+      base_url: `${origin}/api/llm`,
+      publisher_funded: true,
       mock: false,
     },
     allowed_peers: role === 'merchant' ? [peerOrigin] : [],
@@ -85,7 +87,6 @@ export function agentRoutes(app: Hono, config: Config) {
       mode: 'static',
       self_contained_runtime: true,
       browser_mock: false,
-      direct_byok: true,
       public_mcp_facade: false,
     },
     linking,
@@ -104,6 +105,14 @@ export function agentRoutes(app: Hono, config: Config) {
       c.header('Access-Control-Allow-Origin', '*');
       return c.json(body);
     });
+  // Apache-2.0 §4(a): the redistributed nsDeploy runtime is served with its licence.
+  // The upstream checkout keeps LICENSE.txt two levels above nsdeploy/runtime.
+  app.get('/runtime/LICENSE.txt', async (c) => {
+    const licence = Bun.file(join(config.runtimePath, '..', '..', 'LICENSE.txt'));
+    if (!(await licence.exists())) return c.notFound();
+    c.header('Content-Type', 'text/plain; charset=utf-8');
+    return c.body(await licence.text());
+  });
   app.get('/runtime/*', async (c) => {
     const file = c.req.path.slice('/runtime/'.length);
     if (!runtimeFiles.has(file)) return c.notFound();
@@ -122,10 +131,13 @@ export function agentRoutes(app: Hono, config: Config) {
       new URL(`../../../public/${role}/${role}.network.json`, import.meta.url),
     ).json();
     c.header('Access-Control-Allow-Origin', '*');
-    return c.json(network);
+    // The default route serves only the operator-configured model; publish it as the network's model.
+    return c.json(
+      config.model ? { ...network, llm_config: { model_name: config.model } } : network,
+    );
   });
   app.get('/action-policy.json', (c) =>
-    c.json({ callerOrigins: role === 'courier' ? [peerOrigin, origin] : [origin] }),
+    c.json({ role, callerOrigins: role === 'courier' ? [peerOrigin, origin] : [origin] }),
   );
   app.get('/actions.js', async (c) => {
     c.header('Content-Type', 'text/javascript; charset=utf-8');

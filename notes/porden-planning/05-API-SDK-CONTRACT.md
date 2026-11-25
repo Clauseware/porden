@@ -67,8 +67,8 @@ Endpoints are logical; both organizations use independent deployments. An HTTP r
 
 | Verb | Path | Purpose |
 | --- | --- | --- |
-| GET | `/healthz` | Process health |
-| GET | `/readyz` | DB and essential dependency readiness |
+| GET | `/health` | Process health |
+| GET | `/ready` | DB and essential dependency readiness |
 | POST | `/v1/transfers` | Validate and create sender-owned draft |
 | POST | `/v1/transfers/:id/approve` | Bind customer approval to recipient, fields, payload integrity and expiry |
 | GET | `/v1/transfers/:id` | Authenticated status lookup and recovery |

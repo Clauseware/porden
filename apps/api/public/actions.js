@@ -1,8 +1,27 @@
 // Runs only inside an official merchant or courier action bridge.
 export async function registerActions(actions) {
+  const operationId = async (value) => {
+    if (typeof value !== 'string' || !value || value.length > 500)
+      throw Error('A valid operation ID is required');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))
+      return value;
+    // nsDeploy IDs contain ':'; preserve their identity as a deterministic UUID for REST reconciliation.
+    const bytes = new Uint8Array(
+      await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode('porden-runtime-operation:' + value),
+      ),
+    );
+    bytes[6] = (bytes[6] & 15) | 128;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join(
+      '',
+    );
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
   const policy = await fetch('/action-policy.json');
   if (!policy.ok) throw Error('Porden action discovery unavailable');
-  const { callerOrigins } = await policy.json();
+  const { callerOrigins, role } = await policy.json();
 
   const legacySchema = await fetch('/api/v1/case-types');
   if (legacySchema.ok) {
@@ -44,6 +63,20 @@ export async function registerActions(actions) {
       goal: { type: 'string' },
       constraints: { type: 'array', items: { type: 'string' } },
       acceptanceCriteria: { type: 'array', items: { type: 'string' } },
+      executionScopes: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['action', 'parametersSha256'],
+          properties: {
+            action: { type: 'string' },
+            parametersSha256: { type: 'string', minLength: 64, maxLength: 64 },
+          },
+        },
+      },
       budget: {
         type: 'object',
         properties: { amountMinor: { type: 'integer' }, currency: { type: 'string' } },
@@ -84,7 +117,18 @@ export async function registerActions(actions) {
     additionalProperties: false,
     required: ['operation'],
     properties: {
-      operation: { type: 'string', enum: ['create', 'accept', 'reject', 'revise', 'finish'] },
+      operation: {
+        type: 'string',
+        enum: [
+          'create',
+          'accept',
+          'reject',
+          'revise',
+          'finish',
+          'clarify',
+          'resolve_clarification',
+        ],
+      },
       handoffId: { type: 'string' },
       receiverOrganizationId: { type: 'string' },
       version: { type: 'integer', minimum: 1 },
@@ -92,6 +136,24 @@ export async function registerActions(actions) {
       reason: { type: 'string' },
       status: { type: 'string', enum: ['completed', 'failed'] },
       note: { type: 'string' },
+      criterionResults: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['criterionIndex', 'met'],
+          properties: {
+            criterionIndex: { type: 'integer', minimum: 0, maximum: 29 },
+            met: { type: 'boolean' },
+            reason: { type: 'string' },
+          },
+        },
+      },
+      missingInformation: { type: 'array', minItems: 1, items: { type: 'string' } },
+      clarificationId: { type: 'string' },
+      response: { type: 'string' },
       workflowId: { type: 'string' },
       previousHandoffId: { type: 'string' },
     },
@@ -132,21 +194,22 @@ export async function registerActions(actions) {
   };
   actions.register({
     name: 'porden_handoff',
-    description: 'Create, accept, reject, revise, or finish a versioned Porden task handoff.',
+    description:
+      'Create, accept, reject, revise, clarify, resolve clarification, or finish a versioned Porden task handoff. Completion requires a result for every zero-based acceptance criterion; unmet criteria require reasons. Clarification supplies information; changed terms require revision.',
     effect: 'write',
     availability: 'bridge',
     callerOrigins,
     inputSchema,
     async execute(args, context) {
       const { csrf } = await session(context.signal);
-      const body = { requestId: context.requestId, version: args.version };
+      const body = { requestId: await operationId(context.requestId), version: args.version };
       try {
         switch (args.operation) {
           case 'create':
             return await call(
               '/handoffs',
               {
-                requestId: context.requestId,
+                requestId: body.requestId,
                 receiverOrganizationId: args.receiverOrganizationId,
                 terms: args.terms,
                 workflowId: args.workflowId,
@@ -169,14 +232,31 @@ export async function registerActions(actions) {
           case 'finish':
             return await call(
               `/handoffs/${args.handoffId}/finish`,
-              { ...body, status: args.status, note: args.note },
+              {
+                ...body,
+                status: args.status,
+                note: args.note,
+                criterionResults: args.criterionResults,
+              },
+              { ...context, csrf },
+            );
+          case 'clarify':
+            return await call(
+              `/handoffs/${args.handoffId}/clarifications`,
+              { ...body, missingInformation: args.missingInformation, reason: args.reason },
+              { ...context, csrf },
+            );
+          case 'resolve_clarification':
+            return await call(
+              `/handoffs/${args.handoffId}/clarifications/resolve`,
+              { ...body, clarificationId: args.clarificationId, response: args.response },
               { ...context, csrf },
             );
         }
       } catch (error) {
         if (error?.unknown)
           throw Error(
-            `Write outcome unknown. Reconcile operationId ${context.requestId} with porden_handoff_read; do not retry this write.`,
+            `Write outcome unknown. Reconcile operationId ${body.requestId} with porden_handoff_read; do not retry this write.`,
           );
         throw error;
       }
@@ -216,7 +296,7 @@ export async function registerActions(actions) {
       }
       if (args.operation === 'reconcile') {
         if (!args.operationId) throw Error('An operationId is required for reconciliation');
-        return call(`/operations/${args.operationId}`, undefined, context);
+        return call(`/operations/${await operationId(args.operationId)}`, undefined, context);
       }
       if (!args.handoffId) throw Error('A handoffId is required for this read');
       if (args.operation === 'detail')
@@ -229,4 +309,146 @@ export async function registerActions(actions) {
       return call(`/workflows/${args.handoffId}`, undefined, context);
     },
   });
+
+  // Damaged-parcel claims example. These actions stay on their own site (local-only); the
+  // site's server enforces consent, pricing and policy, so the model only proposes arguments.
+  const siteWrite = async (path, body, signal) => {
+    const auth = await fetch('/api/v1/session', { credentials: 'include', signal });
+    if (!auth.ok) throw Error('Sign in to this site first');
+    const { csrf } = await auth.json();
+    let response;
+    try {
+      response = await fetch(path, {
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(body),
+      });
+    } catch (cause) {
+      throw Object.assign(Error('Claim write outcome is unknown'), { unknown: true, cause });
+    }
+    if (response.status >= 500)
+      throw Object.assign(Error('Claim write outcome is unknown'), { unknown: true });
+    const result = await response.json().catch((cause) => {
+      throw Object.assign(Error('Claim write response is unknown'), { unknown: true, cause });
+    });
+    if (!response.ok)
+      throw Error(`Claim request refused: ${result?.error?.code || response.status}`);
+    return result;
+  };
+  const claimWrite = async (path, body, signal) => {
+    try {
+      return await siteWrite(path, body, signal);
+    } catch (error) {
+      if (error?.unknown)
+        throw Error(
+          `Write outcome unknown. Check /api/v1/claims/operations/${body.requestId}; do not retry this write.`,
+        );
+      throw error;
+    }
+  };
+  if (role === 'courier')
+    actions.register({
+      name: 'courier_claim_decision',
+      description:
+        'Record the courier decision on a damaged-parcel claim: accept, reject, clarify (ask for missing information), counter (offer partial_refund or reship; the server computes the amount and terms), or complete after the case exists. The courier server refuses any decision its claims policy does not allow.',
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['handoffId', 'version', 'decision', 'reason'],
+        properties: {
+          handoffId: { type: 'string', minLength: 36, maxLength: 36 },
+          version: { type: 'integer', minimum: 1 },
+          decision: {
+            type: 'string',
+            enum: ['accept', 'reject', 'clarify', 'counter', 'complete'],
+          },
+          reason: { type: 'string', minLength: 1, maxLength: 2000 },
+          missingInformation: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string', enum: ['photo_of_damage'] },
+          },
+          remedy: { type: 'string', enum: ['partial_refund', 'reship'] },
+        },
+      },
+      async execute(args, context) {
+        const { handoffId, ...decision } = args;
+        return claimWrite(
+          `/api/v1/claims/${encodeURIComponent(handoffId)}/decisions`,
+          { ...decision, requestId: await operationId(context.requestId) },
+          context.signal,
+        );
+      },
+    });
+  if (role === 'merchant') {
+    actions.register({
+      name: 'merchant_file_claim',
+      description:
+        "File the customer's damaged-parcel claim for order DEMO-1042 with the courier. Submitting it is the customer's consent to share the listed fields. Order facts and refund amounts come from the merchant's order system; partialRefundMinor is only the customer's own stated amount in cents.",
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['damageDescription', 'photoProvided', 'remedy'],
+        properties: {
+          damageDescription: { type: 'string', minLength: 8, maxLength: 500 },
+          deliveryAddress: { type: 'string', minLength: 5, maxLength: 250 },
+          photoProvided: { type: 'boolean' },
+          remedy: { type: 'string', enum: ['full_refund', 'partial_refund', 'reship'] },
+          partialRefundMinor: { type: 'integer', minimum: 1 },
+        },
+      },
+      async execute(args, context) {
+        const data = {
+          orderReference: 'DEMO-1042',
+          damageDescription: args.damageDescription,
+          ...(args.deliveryAddress ? { deliveryAddress: args.deliveryAddress } : {}),
+        };
+        if (args.remedy === 'partial_refund' && !args.partialRefundMinor)
+          throw Error('A partial refund needs the amount the customer asked for');
+        return claimWrite(
+          '/api/v1/claims',
+          {
+            requestId: await operationId(context.requestId),
+            data,
+            approvedFields: Object.keys(data),
+            photoProvided: args.photoProvided,
+            requestedResolution:
+              args.remedy === 'partial_refund'
+                ? { remedy: 'partial_refund', amountMinor: args.partialRefundMinor }
+                : { remedy: args.remedy },
+          },
+          context.signal,
+        );
+      },
+    });
+    actions.register({
+      name: 'merchant_answer_clarification',
+      description:
+        "Send the customer's answer to the courier's clarification request. The answer supplies information only; it never changes the claim terms.",
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['handoffId', 'version', 'clarificationId', 'response'],
+        properties: {
+          handoffId: { type: 'string', minLength: 36, maxLength: 36 },
+          version: { type: 'integer', minimum: 1 },
+          clarificationId: { type: 'string', minLength: 36, maxLength: 36 },
+          response: { type: 'string', minLength: 1, maxLength: 4000 },
+        },
+      },
+      async execute(args, context) {
+        const { handoffId, ...answer } = args;
+        return claimWrite(
+          `/api/v1/claims/${encodeURIComponent(handoffId)}/clarifications/resolve`,
+          { ...answer, requestId: await operationId(context.requestId) },
+          context.signal,
+        );
+      },
+    });
+  }
 }
