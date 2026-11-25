@@ -23,12 +23,18 @@ async function ensure() {
   if (process.env.PORDEN_SKIP_NSDEPLOY === '1') return;
   if (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true') return;
 
+  const hasCheckout = existsSync(resolve(ROOT, '.git'));
+
   if (existsSync(RUNTIME)) {
-    const head = await currentHead();
-    if (head === PIN) return;
+    // A copy without its own .git cannot be cloned over or checked against the pin; use it as is.
+    if (!hasCheckout) {
+      console.log('nsDeploy runtime already present in vendor/nsdeploy (no Git checkout, revision not verified)');
+      return;
+    }
+    if ((await currentHead()) === PIN) return;
   }
 
-  if (existsSync(resolve(ROOT, '.git'))) {
+  if (hasCheckout) {
     await run(['git', '-C', ROOT, 'fetch', 'origin', PIN, '--depth', '1']);
     await run(['git', '-C', ROOT, 'checkout', '--detach', PIN]);
     console.log(`Checked out nsDeploy at ${PIN} in vendor/nsdeploy`);
