@@ -10,6 +10,14 @@ Porden moves tasks between organizations. Each handoff has a version, an approva
 
 The product code is in `apps/`. The apps use Hono, Next.js, and PostgreSQL. Shared types and the browser client are in `packages/`. The apps import those packages.
 
+## How we ship
+
+`main` is release-only. Day-to-day work merges into `dev`.
+
+1. Branch from `dev`, open a pull request into `dev`, and get **one approval**. CI must pass (`Apps quality`).
+2. When `dev` is ready to release, open **`dev` → `main`**. Only that head branch is allowed; only **@TraFost** can approve and merge to `main`.
+3. Do not commit or push directly to `main`. Feature branches should not target `main`.
+
 ## Apps
 
 | Directory | Role |
