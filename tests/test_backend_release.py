@@ -39,8 +39,8 @@ def run_release_check():
         'PORDEN_API_IMAGE': 'porden-api:release-candidate',
         'PLATFORM_DOMAIN': 'api.porden.test', 'MERCHANT_DOMAIN': 'merchant.porden.test', 'COURIER_DOMAIN': 'courier.porden.test',
         'ACME_EMAIL': 'release@example.com', 'CADDY_TLS_ISSUER': 'internal',
-        'DASHBOARD_PUBLIC_ORIGIN': 'https://dashboard.porden.test',
-        'OPENROUTER_API_KEY': '', 'OPENROUTER_MODEL': '',
+        # Model calls are scripted inside the browser check; no provider is contacted.
+        'OPENROUTER_API_KEY': 'scripted-not-a-key', 'OPENROUTER_MODEL': 'porden-scripted-test',
         'PORDEN_LISTEN_IP': '127.0.0.1', 'PORDEN_HTTP_PORT': str(http_port), 'PORDEN_HTTPS_PORT': str(https_port),
         'MERCHANT_ORGANIZATION_ID': str(uuid.uuid4()), 'COURIER_ORGANIZATION_ID': str(uuid.uuid4()),
         'PARTNER_SECRET': secrets.token_hex(32), 'POSTGRES_PASSWORD': secrets.token_hex(32),
@@ -115,14 +115,14 @@ def run_release_check():
         values['PORDEN_EXTRA_CA_BASE64'] = base64.b64encode((certificates / 'ca.pem').read_bytes()).decode('ascii')
         save_environment()
         command(compose + ['up', '-d', '--no-build', '--wait', '--wait-timeout', '180'], 'api-startup')
-        for service in ['platform', 'merchant', 'courier', 'postgres', 'caddy']:
+        for service in ['platform', 'merchant', 'courier', 'merchant-web', 'courier-web', 'dashboard-web', 'postgres', 'caddy']:
             container = command(compose + ['ps', '-q', service], 'container-' + service).strip()
             bindings = json.loads(command(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', container], 'ports-' + service)) or {}
             assert set(bindings) == ({'80/tcp', '443/tcp'} if service == 'caddy' else set()), service
-            if service in ['platform', 'merchant', 'courier']:
+            if service in ['platform', 'merchant', 'courier', 'merchant-web', 'courier-web', 'dashboard-web']:
                 assert command(compose + ['exec', '-T', service, 'id', '-u'], 'uid-' + service).strip() == '1000'
                 assert command(['docker', 'inspect', '--format', '{{.HostConfig.ReadonlyRootfs}}', container], 'readonly-' + service).strip() == 'true'
-        print('PASS only Caddy publishes host ports; APIs are non-root and read-only', flush=True)
+        print('PASS only Caddy publishes host ports; APIs and sites are non-root and read-only', flush=True)
         # Verify the actual published host ports with certificate and hostname checks enabled.
         context = ssl.create_default_context(cafile=str(certificates / 'ca.pem'))
         with socket.create_connection(('127.0.0.1', https_port)) as connection:
@@ -136,6 +136,14 @@ def run_release_check():
         print('PASS published HTTPS routing and automatic HTTP-to-HTTPS redirect', flush=True)
         command(compose + ['run', '--rm', '--no-deps', '--entrypoint', 'bun', '-v', str(provision_file) + ':/test/provision.json:ro', '-e', 'PORDEN_PROVISION_FILE=/test/provision.json', 'platform', 'apps/api/src/db/platform-provision.ts'], 'provision')
         checks('https-checks')
+        # Browser flow through the real Caddy on the published port, across all three sites.
+        browser_env = {**os.environ, 'PORDEN_DEPLOYED_HTTPS_PORT': str(https_port), 'PORDEN_DEPLOYED_PROOF': str(directory / 'browser'),
+                       'MERCHANT_DEMO_PASSWORD': values['MERCHANT_DEMO_PASSWORD'], 'COURIER_DEMO_PASSWORD': values['COURIER_DEMO_PASSWORD'],
+                       'TEST_HUMAN_PASSWORD': values['TEST_HUMAN_PASSWORD']}
+        browser = subprocess.run(['bun', 'tests/test_deployed_browser.ts'], cwd=ROOT, env=browser_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        (directory / 'browser.log').write_text(browser.stdout, encoding='utf-8')
+        print(browser.stdout, flush=True)
+        assert browser.returncode == 0, 'deployed-browser'
         for service in ['platform', 'merchant', 'courier']:
             path = 'platform-migrate.ts' if service == 'platform' else 'migrate.ts'
             command(compose + ['exec', '-T', service, 'bun', 'apps/api/src/db/' + path], 'migration-replay-' + service)
@@ -180,7 +188,8 @@ def run_release_check():
             command(compose + ['exec', '-T', service, 'bun', 'infra/standalone/healthcheck.mjs'], 'unready-' + service, expect_success=False)
         print('PASS failed migrations block startup and database outage fails all readiness checks', flush=True)
         image_id = command(['docker', 'image', 'inspect', '--format', '{{.Id}}', values['PORDEN_API_IMAGE']], 'image-id').strip()
-        (directory / 'result.json').write_text(json.dumps({'passed': True, 'project': project, 'imageId': image_id, 'singleComposeFile': 'infra/standalone/compose.yml', 'onlyCaddyPublishesPorts': True, 'databasePersistence': True, 'certificatePersistence': True, 'threeDatabaseBackupRestore': True, 'caddyBackupRestore': True, 'protectedWritesAfterRestore': True}), encoding='utf-8')
+        web_images = {app: command(['docker', 'image', 'inspect', '--format', '{{.Id}}', 'porden-' + app + ':release-candidate'], 'image-id-' + app).strip() for app in ['merchant-web', 'courier-web', 'dashboard-web']}
+        (directory / 'result.json').write_text(json.dumps({'passed': True, 'project': project, 'imageId': image_id, 'webImageIds': web_images, 'frontendsBehindCaddy': True, 'deployedBrowserFlow': True, 'rateLimitsThroughCaddy': True, 'singleComposeFile': 'infra/standalone/compose.yml', 'onlyCaddyPublishesPorts': True, 'databasePersistence': True, 'certificatePersistence': True, 'threeDatabaseBackupRestore': True, 'caddyBackupRestore': True, 'protectedWritesAfterRestore': True}), encoding='utf-8')
         print('Release evidence:', directory, flush=True)
     finally:
         # Only this generated disposable project may be removed; never use a production project here.

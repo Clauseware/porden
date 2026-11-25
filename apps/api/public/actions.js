@@ -21,7 +21,7 @@ export async function registerActions(actions) {
   };
   const policy = await fetch('/action-policy.json');
   if (!policy.ok) throw Error('Porden action discovery unavailable');
-  const { callerOrigins } = await policy.json();
+  const { callerOrigins, role } = await policy.json();
 
   const legacySchema = await fetch('/api/v1/case-types');
   if (legacySchema.ok) {
@@ -309,4 +309,146 @@ export async function registerActions(actions) {
       return call(`/workflows/${args.handoffId}`, undefined, context);
     },
   });
+
+  // Damaged-parcel claims example. These actions stay on their own site (local-only); the
+  // site's server enforces consent, pricing and policy, so the model only proposes arguments.
+  const siteWrite = async (path, body, signal) => {
+    const auth = await fetch('/api/v1/session', { credentials: 'include', signal });
+    if (!auth.ok) throw Error('Sign in to this site first');
+    const { csrf } = await auth.json();
+    let response;
+    try {
+      response = await fetch(path, {
+        method: 'POST',
+        credentials: 'include',
+        signal,
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(body),
+      });
+    } catch (cause) {
+      throw Object.assign(Error('Claim write outcome is unknown'), { unknown: true, cause });
+    }
+    if (response.status >= 500)
+      throw Object.assign(Error('Claim write outcome is unknown'), { unknown: true });
+    const result = await response.json().catch((cause) => {
+      throw Object.assign(Error('Claim write response is unknown'), { unknown: true, cause });
+    });
+    if (!response.ok)
+      throw Error(`Claim request refused: ${result?.error?.code || response.status}`);
+    return result;
+  };
+  const claimWrite = async (path, body, signal) => {
+    try {
+      return await siteWrite(path, body, signal);
+    } catch (error) {
+      if (error?.unknown)
+        throw Error(
+          `Write outcome unknown. Check /api/v1/claims/operations/${body.requestId}; do not retry this write.`,
+        );
+      throw error;
+    }
+  };
+  if (role === 'courier')
+    actions.register({
+      name: 'courier_claim_decision',
+      description:
+        'Record the courier decision on a damaged-parcel claim: accept, reject, clarify (ask for missing information), counter (offer partial_refund or reship; the server computes the amount and terms), or complete after the case exists. The courier server refuses any decision its claims policy does not allow.',
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['handoffId', 'version', 'decision', 'reason'],
+        properties: {
+          handoffId: { type: 'string', minLength: 36, maxLength: 36 },
+          version: { type: 'integer', minimum: 1 },
+          decision: {
+            type: 'string',
+            enum: ['accept', 'reject', 'clarify', 'counter', 'complete'],
+          },
+          reason: { type: 'string', minLength: 1, maxLength: 2000 },
+          missingInformation: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string', enum: ['photo_of_damage'] },
+          },
+          remedy: { type: 'string', enum: ['partial_refund', 'reship'] },
+        },
+      },
+      async execute(args, context) {
+        const { handoffId, ...decision } = args;
+        return claimWrite(
+          `/api/v1/claims/${encodeURIComponent(handoffId)}/decisions`,
+          { ...decision, requestId: await operationId(context.requestId) },
+          context.signal,
+        );
+      },
+    });
+  if (role === 'merchant') {
+    actions.register({
+      name: 'merchant_file_claim',
+      description:
+        "File the customer's damaged-parcel claim for order DEMO-1042 with the courier. Submitting it is the customer's consent to share the listed fields. Order facts and refund amounts come from the merchant's order system; partialRefundMinor is only the customer's own stated amount in cents.",
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['damageDescription', 'photoProvided', 'remedy'],
+        properties: {
+          damageDescription: { type: 'string', minLength: 8, maxLength: 500 },
+          deliveryAddress: { type: 'string', minLength: 5, maxLength: 250 },
+          photoProvided: { type: 'boolean' },
+          remedy: { type: 'string', enum: ['full_refund', 'partial_refund', 'reship'] },
+          partialRefundMinor: { type: 'integer', minimum: 1 },
+        },
+      },
+      async execute(args, context) {
+        const data = {
+          orderReference: 'DEMO-1042',
+          damageDescription: args.damageDescription,
+          ...(args.deliveryAddress ? { deliveryAddress: args.deliveryAddress } : {}),
+        };
+        if (args.remedy === 'partial_refund' && !args.partialRefundMinor)
+          throw Error('A partial refund needs the amount the customer asked for');
+        return claimWrite(
+          '/api/v1/claims',
+          {
+            requestId: await operationId(context.requestId),
+            data,
+            approvedFields: Object.keys(data),
+            photoProvided: args.photoProvided,
+            requestedResolution:
+              args.remedy === 'partial_refund'
+                ? { remedy: 'partial_refund', amountMinor: args.partialRefundMinor }
+                : { remedy: args.remedy },
+          },
+          context.signal,
+        );
+      },
+    });
+    actions.register({
+      name: 'merchant_answer_clarification',
+      description:
+        "Send the customer's answer to the courier's clarification request. The answer supplies information only; it never changes the claim terms.",
+      effect: 'write',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['handoffId', 'version', 'clarificationId', 'response'],
+        properties: {
+          handoffId: { type: 'string', minLength: 36, maxLength: 36 },
+          version: { type: 'integer', minimum: 1 },
+          clarificationId: { type: 'string', minLength: 36, maxLength: 36 },
+          response: { type: 'string', minLength: 1, maxLength: 4000 },
+        },
+      },
+      async execute(args, context) {
+        const { handoffId, ...answer } = args;
+        return claimWrite(
+          `/api/v1/claims/${encodeURIComponent(handoffId)}/clarifications/resolve`,
+          { ...answer, requestId: await operationId(context.requestId) },
+          context.signal,
+        );
+      },
+    });
+  }
 }

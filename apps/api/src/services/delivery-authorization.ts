@@ -5,8 +5,9 @@ import type { z } from 'zod';
 import type { Config } from '../config';
 import { ApiError } from '../application/errors';
 import { hash, verifyApproval, type Fetcher } from '../security';
+import { readClaimTerms } from './claim-terms';
 
-function authorizationFailure(cause: unknown): never {
+export function authorizationFailure(cause: unknown): never {
   if (!(cause instanceof PordenError)) throw cause;
   if (cause.status === 409) throw new ApiError(cause.code, 409, undefined, { cause });
   if (cause.status === 403 || cause.status === 404)
@@ -28,7 +29,7 @@ export function deliveryPlatform(config: Config, fetcher: Fetcher) {
     fetch: (url, init) =>
       fetcher(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(5000) }),
   });
-  const handoff = async (governance: z.infer<typeof DeliveryGovernance>) => {
+  const handoff = async (governance: Pick<z.infer<typeof DeliveryGovernance>, 'handoffId'>) => {
     const [session, state] = await Promise.all([
       client.session(),
       client.getHandoff(governance.handoffId),
@@ -80,7 +81,10 @@ export async function reserveDeliveryCase(
   args: CreateCase,
 ) {
   const { client, handoff } = deliveryPlatform(config, fetcher);
-  await handoff(governance);
+  const state = await handoff(governance);
+  const terms = state.versions.find((item) => item.version === governance.version)?.terms;
+  // Claim handoffs bind the agreed resolution to the version; the receipt states it.
+  const resolution = terms ? readClaimTerms(terms)?.parameters.resolution : undefined;
   const result = await client.reserveExecution(governance.handoffId, {
     requestId: args.transferId,
     version: governance.version,
@@ -92,7 +96,7 @@ export async function reserveDeliveryCase(
   if (event?.type !== 'execution_reserved') throw new ApiError('AUTHORIZATION_UNAVAILABLE', 502);
   const execution = result.handoff.executions.find((item) => item.id === event.execution.id);
   if (!execution || execution.status === 'failed') throw new ApiError('REQUEST_CONFLICT', 409);
-  return { client, execution };
+  return { client, execution, resolution };
 }
 
 export async function createDeliveryCase(
@@ -113,7 +117,25 @@ export async function createDeliveryCase(
     if (result.transferId !== args.transferId) throw new ApiError('REQUEST_CONFLICT', 409);
     return result;
   }
-  const result = await db.createCase(args, approval.governance);
+  const governance = approval.governance;
+  // Under the transfer lock, insert only while this reservation is still open. If recovery has
+  // already settled it, no case is written.
+  const stillReserved =
+    reservation && governance
+      ? async () => {
+          const state = await reservation.client
+            .getHandoff(governance.handoffId)
+            .catch(authorizationFailure);
+          const current = state.executions.find((item) => item.id === reservation.execution.id);
+          if (current?.status !== 'reserved') throw new ApiError('REQUEST_CONFLICT', 409);
+        }
+      : undefined;
+  const result = await db.createCase(
+    args,
+    approval.governance,
+    reservation?.resolution,
+    stillReserved,
+  );
   if (reservation && approval.governance) {
     await reservation.client
       .settleExecution(approval.governance.handoffId, {
@@ -129,4 +151,56 @@ export async function createDeliveryCase(
   }
 
   return result;
+}
+
+/**
+ * Settles governed executions left reserved by an interrupted write (for example, a lost
+ * platform response after the case committed). It never repeats the case write: it reads
+ * what the courier database committed and settles the platform reservation to match.
+ */
+export async function recoverDeliveryExecutions(
+  config: Config,
+  db: ReturnType<typeof store>,
+  fetcher: Fetcher,
+  handoffId: string,
+) {
+  const { client, handoff } = deliveryPlatform(config, fetcher);
+  const state = await handoff({ handoffId }).catch(authorizationFailure);
+  const recovered = [];
+  for (const execution of state.executions) {
+    if (execution.status !== 'reserved' || execution.action !== 'courier.create_case') continue;
+    const reservation = state.receipts.find(
+      (item) =>
+        item.event?.type === 'execution_reserved' && item.event.execution.id === execution.id,
+    );
+    if (!reservation) throw new ApiError('AUTHORIZATION_UNAVAILABLE', 502);
+    // The reservation request ID is the transfer ID used by the case write. The settle runs while
+    // the transfer lock is held, so a concurrent case write cannot commit around it.
+    const transferId = reservation.requestId;
+    const outcome = await db.whileTransferLocked(transferId, async (committed) => {
+      if (
+        committed &&
+        hash({ transferId: committed.transferId, requestId: committed.requestId }) !==
+          execution.operationReference
+      )
+        throw new ApiError('REQUEST_CONFLICT', 409);
+      await client
+        .settleExecution(handoffId, {
+          requestId: execution.id,
+          executionId: execution.id,
+          version: execution.version,
+          outcome: committed ? 'completed' : 'failed',
+          resultReference: committed ? committed.caseId : 'NO_CASE_COMMITTED',
+        })
+        .catch(authorizationFailure);
+      return committed;
+    });
+    const committed = outcome;
+    recovered.push({
+      executionId: execution.id,
+      outcome: committed ? ('completed' as const) : ('failed' as const),
+      ...(committed ? { caseId: committed.caseId } : {}),
+    });
+  }
+  return { handoffId, recovered };
 }

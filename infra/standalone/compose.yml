@@ -22,6 +22,17 @@ x-api: &api
       max-size: 10m
       max-file: '3'
 
+# The three Next.js sites. They serve pages only; Caddy routes API, discovery and runtime paths
+# straight to the APIs. Build args set the apps' internal rewrite targets.
+x-web: &web
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 15s
+  logging: *logging
+
 services:
   caddy:
     image: caddy:2.10.2-alpine
@@ -139,9 +150,46 @@ services:
       PORDEN_ORGANIZATION_ID: ${COURIER_ORGANIZATION_ID}
       PORDEN_PEER_ORGANIZATION_ID: ${MERCHANT_ORGANIZATION_ID}
       PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
     secrets:
       - source: courier_signing_key
         target: signing_key
+
+  merchant-web:
+    <<: *web
+    image: ${PORDEN_MERCHANT_WEB_IMAGE:-porden-merchant-web:release-candidate}
+    build:
+      context: ../..
+      dockerfile: infra/standalone/web.Dockerfile
+      args:
+        APP: merchant-web
+        API_INTERNAL_ORIGIN: http://merchant:5100
+    tmpfs:
+      - /app/apps/merchant-web/.next/cache:size=64m,mode=1777
+
+  courier-web:
+    <<: *web
+    image: ${PORDEN_COURIER_WEB_IMAGE:-porden-courier-web:release-candidate}
+    build:
+      context: ../..
+      dockerfile: infra/standalone/web.Dockerfile
+      args:
+        APP: courier-web
+        API_INTERNAL_ORIGIN: http://courier:5200
+    tmpfs:
+      - /app/apps/courier-web/.next/cache:size=64m,mode=1777
+
+  dashboard-web:
+    <<: *web
+    image: ${PORDEN_DASHBOARD_WEB_IMAGE:-porden-dashboard-web:release-candidate}
+    build:
+      context: ../..
+      dockerfile: infra/standalone/web.Dockerfile
+      args:
+        APP: dashboard-web
+    tmpfs:
+      - /app/apps/dashboard-web/.next/cache:size=64m,mode=1777
 
 secrets:
   platform_signing_key:

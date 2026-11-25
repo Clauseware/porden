@@ -1,10 +1,10 @@
 # Standalone VPS operations
 
-One deployment configuration: `compose.yml`. It runs Caddy, PostgreSQL 17, and the existing platform, merchant and courier Bun/Hono APIs. No hosted control panel, extra proxy, backup service or orchestration layer is required. This is backend preparation only; no server has been deployed.
+One deployment configuration: `compose.yml`. It runs Caddy, PostgreSQL 17, the existing platform, merchant and courier Bun/Hono APIs, and the merchant, courier and dashboard Next.js sites. No hosted control panel, extra proxy, backup service or orchestration layer is required. This is backend preparation only; no server has been deployed.
 
 ## Topology and state
 
-Only Caddy publishes host ports 80 and 443. All five services share one project-private Docker bridge. APIs have no published ports, run as UID 1000 with read-only root filesystems, and retain the verified startup migrations and `/health` / `/ready` checks. PostgreSQL has no published port and uses password-authenticated connections inside that same-host private bridge; this deployment does not configure database TLS or an external database.
+Only Caddy publishes host ports 80 and 443. All eight services share one project-private Docker bridge. APIs and sites have no published ports, run as UID 1000 with read-only root filesystems (the sites keep only a tmpfs Next.js cache), and retain the verified startup migrations and `/health` / `/ready` checks. PostgreSQL has no published port and uses password-authenticated connections inside that same-host private bridge; this deployment does not configure database TLS or an external database.
 
 | HTTPS hostname | Routing |
 | --- | --- |
@@ -17,6 +17,20 @@ Business JWKS routes remain on the owning merchant/courier API. Platform receipt
 PostgreSQL contains `porden_platform`, `porden_merchant`, and `porden_courier`, each owned by its corresponding non-superuser role. Public database connectivity is revoked and each role is denied access to the others' databases. The platform service continues enforcing organization membership, approvals, acceptance and scoped execution from persisted state.
 
 Named volumes `postgres_data`, `caddy_data` and `caddy_config` persist database data, certificates/ACME state and Caddy configuration state. Keep the same Compose project name (`porden` by default) across updates. `docker compose down` preserves them; **do not use `down --volumes` on a real deployment**.
+
+### Routing (Caddyfile)
+
+| Host | Sent to the API | Everything else |
+|---|---|---|
+| `PLATFORM_DOMAIN` | `/api/v2*`, `/.well-known/*`, `/health`, `/ready` → platform | dashboard site |
+| `MERCHANT_DOMAIN` | `/api/v2*` → platform; `/api/*`, `/runtime/*`, `/.well-known/*`, `/agent-manifest.json`, `/links.json`, `/agent-mcp.json`, `/merchant.network.json`, `/actions.js`, `/action-policy.json`, `/action-bridge.html`, `/health`, `/ready` → merchant API | merchant site |
+| `COURIER_DOMAIN` | same paths, with `/courier.network.json` → courier API | courier site |
+
+- **The dashboard shares `PLATFORM_DOMAIN`**, which is the default `DASHBOARD_PUBLIC_ORIGIN`. It therefore needs no extra DNS name.
+- **API paths never pass through Next.js.** Their `X-Forwarded-For` is the client address that Caddy sets, and the APIs' rate limits rely on it:
+  - public receipt verifier: 30 per client and 600 in total per minute;
+  - sign-in on all three APIs: 20 per client and 300 in total per minute.
+- **No CDN or extra proxy in front of Caddy.** If one is ever added, configure Caddy `trusted_proxies`, or all users share one limit.
 
 ## Minimum VPS setup, after approval
 
@@ -45,6 +59,42 @@ done
 ```
 
 Ensure signing keys are readable by container UID 1000 and keep their IDs and private material stable across redeployments. On a root-managed Linux VPS, `chown 1000:1000 secrets/*.pem` and `chmod 400 secrets/*.pem` accomplish this while the parent directory remains private. Never generate keys or change persisted database passwords automatically during startup.
+
+### Rotating a signing key
+
+Receipts and approvals are verified against each issuer's published key set at `/.well-known/jwks.json`. A rotation must keep the old **public** key published, or every receipt signed before the rotation becomes unverifiable.
+
+1. Export the current public key as a JWK, with its existing `kid`, `alg: "ES256"` and `use: "sig"`. Store it in a JSON file `{"keys":[<that JWK>]}`.
+   - It must contain **no** private (`d`) field.
+   - Startup refuses private material, malformed keys and duplicate key IDs.
+2. Mount that file read-only into the service, and set its path. `compose.yml` does not ship this wiring; add it to the rotated service (example for the courier):
+
+   ```yaml
+   courier:
+     environment:
+       SIGNING_RETIRED_KEYS_PATH: /run/secrets/retired_keys
+     secrets:
+       - source: courier_signing_key
+         target: signing_key
+       - source: courier_retired_keys
+         target: retired_keys
+   secrets:
+     courier_retired_keys:
+       file: ./secrets/courier-retired.json
+   ```
+
+   The service uses this path:
+   - `SIGNING_RETIRED_KEYS_PATH` for the merchant and courier;
+   - `PORDEN_SIGNING_RETIRED_KEYS_PATH` for the platform.
+3. Install the new private key with a **new** key ID (`*_SIGNING_KEY_ID`), then redeploy.
+   - New receipts are signed with the new key.
+   - The published set lists the new key first, then the retired ones.
+4. Never remove a retired public key while receipts signed with it may still need to be checked.
+   **Exception: a compromised key.** Remove it from the current and retired sets immediately and redeploy.
+   - Receipts it signed can then no longer be verified.
+   - Verifiers may keep accepting it for up to 5 minutes (their key cache).
+
+Verifiers cache issuer keys for up to 5 minutes. An unknown key ID forces a refresh at most every 30 seconds, so receipts signed with a new key verify within about 30 seconds of the rotation.
 
 After source/image and target approval:
 
@@ -130,6 +180,9 @@ Check `/health`, `/ready`, platform history and receipt verification, and a cont
 ```sh
 # Repository root; Python cryptography is already used by the existing verification suite.
 docker build -f apps/api/Dockerfile -t porden-api:release-candidate .
+docker build -f infra/standalone/web.Dockerfile --build-arg APP=merchant-web --build-arg API_INTERNAL_ORIGIN=http://merchant:5100 -t porden-merchant-web:release-candidate .
+docker build -f infra/standalone/web.Dockerfile --build-arg APP=courier-web --build-arg API_INTERNAL_ORIGIN=http://courier:5200 -t porden-courier-web:release-candidate .
+docker build -f infra/standalone/web.Dockerfile --build-arg APP=dashboard-web -t porden-dashboard-web:release-candidate .
 bun run test:release
 bun run check:apps
 ```
@@ -152,6 +205,8 @@ Exact deployment file changes:
 - `infra/standalone/README.md`: internal operator commands and verification report, replacing control-panel instructions.
 - `apps/api/Dockerfile`: updated startup and health-check file paths; the verified API image structure and runtime remain unchanged.
 - `tests/test_backend_release.py`: exercises this one Compose file, including published routing, persistent volumes and database/Caddy archive recovery.
+- `infra/standalone/web.Dockerfile`: one image definition for the three Next.js sites (Node 22; about 1.2 GB each, because the full workspace dependencies are kept; Next.js standalone output would shrink this but needs a config change).
+- `tests/test_deployed_browser.ts`: run by the release check. A claim crosses the merchant, courier and dashboard sites through the real Caddy, with the SDK transfer through the bridge popup and cross-origin receipt verification. Inference is scripted in the browser. The browser accepts the per-run internal CA without OS trust; `check.mjs` verifies TLS against that CA.
 - `.gitignore` and `.dockerignore`: exclude private deployment keys, provisioning files and backup archives.
 
 The obsolete control-panel directory, separate test Compose overlay and handwritten test TLS proxy have been removed. No control-panel-specific references remain in active repository files.

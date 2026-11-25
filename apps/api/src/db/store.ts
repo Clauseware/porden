@@ -13,6 +13,7 @@ import {
   type DeliveryGovernance,
 } from '@porden/contracts';
 import type { z } from 'zod';
+import type { Resolution } from '@porden/contracts/delivery-claims';
 import { ApiError } from '../application/errors';
 import { hash, type signer, type Fetcher } from '../security';
 import { verifyDeliveryConsent } from '../services/delivery-authorization';
@@ -205,7 +206,13 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         return receipt;
       });
     },
-    async createCase(args: CreateCase, governance?: z.infer<typeof DeliveryGovernance>) {
+    async createCase(
+      args: CreateCase,
+      governance?: z.infer<typeof DeliveryGovernance>,
+      resolution?: Resolution,
+      // Runs under the transfer lock before a new case is inserted; throw to abort without writing.
+      beforeInsert?: () => Promise<void>,
+    ) {
       return db.transaction(async (tx) => {
         // Serialize a transfer across differing runtime request IDs as well as exact replays.
         await tx.execute(
@@ -233,6 +240,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             throw new ApiError('REQUEST_CONFLICT', 409);
           return caseResponse(existing[0], true);
         }
+        if (beforeInsert) await beforeInsert();
         const [shipment] = await tx
           .select()
           .from(shipments)
@@ -261,6 +269,7 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
             status: 'accepted',
             receivedAt,
             ...(governance ? { governance } : {}),
+            ...(resolution ? { resolution } : {}),
           },
           'porden-receipt+jwt',
         );
@@ -305,6 +314,27 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         );
       if (!row) throw new ApiError('NOT_FOUND', 404);
       return caseResponse(row, true);
+    },
+    /**
+     * Holds the transfer lock (the same lock a case write takes) while `settle` runs with the
+     * committed case, if any. A concurrent write either committed before this read or will see
+     * the settled reservation after it and abort, so the two can never disagree.
+     */
+    async whileTransferLocked<T>(
+      transferId: string,
+      settle: (committed: ReturnType<typeof caseResponse> | undefined) => Promise<T>,
+    ) {
+      return db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${config.peerOrigin + ':' + transferId},0))`,
+        );
+        const [row] = await tx
+          .select({ case: cases, receipt: receipts })
+          .from(cases)
+          .innerJoin(receipts, eq(receipts.caseId, cases.id))
+          .where(and(eq(cases.callerOrigin, config.peerOrigin), eq(cases.transferId, transferId)));
+        return settle(row ? caseResponse(row, true) : undefined);
+      });
     },
     async getReceipt(id: string) {
       const [row] = await db

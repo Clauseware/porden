@@ -63,6 +63,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     demoPassword: required('DEMO_PASSWORD'),
     keyPath: resolve(required('SIGNING_KEY_PATH')),
     keyId: env.SIGNING_KEY_ID || `porden-${role}-v1`,
+    // Optional JSON file {keys:[public JWK]} of retired keys kept published for old receipts.
+    retiredKeysPath: env.SIGNING_RETIRED_KEYS_PATH
+      ? resolve(env.SIGNING_RETIRED_KEYS_PATH)
+      : undefined,
     runtimePath: resolve(env.NSDEPLOY_RUNTIME_PATH || 'vendor/nsdeploy/nsdeploy/runtime'),
     openrouterKey: env.OPENROUTER_API_KEY || env.openrouter_api_key || '',
     model: env.OPENROUTER_MODEL || env.openrouter_model || '',

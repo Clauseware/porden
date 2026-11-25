@@ -35,6 +35,9 @@ COPY apps/api/drizzle ./apps/api/drizzle
 COPY public/merchant/merchant.network.json ./public/merchant/merchant.network.json
 COPY public/courier/courier.network.json ./public/courier/courier.network.json
 COPY --from=nsdeploy /source/vendor/nsdeploy/nsdeploy/runtime ./vendor/nsdeploy/nsdeploy/runtime
+# Redistributed under Apache-2.0: ship the upstream licence beside the runtime, and Porden's own notices.
+COPY --from=nsdeploy /source/vendor/nsdeploy/LICENSE.txt ./vendor/nsdeploy/LICENSE.txt
+COPY LICENSE NOTICE ./
 COPY infra/standalone/entrypoint.sh infra/standalone/healthcheck.mjs ./infra/standalone/
 USER bun
 EXPOSE 5300 5100 5200

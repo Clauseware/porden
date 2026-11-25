@@ -140,5 +140,45 @@ try {
     const manifest = await (await fetch(merchantOrigin + '/agent-manifest.json')).json();
     assert.equal(manifest.linking.imports[0].target, courierOrigin + '/courier');
   });
+  await check('Caddy serves the three Next.js sites while API, discovery and runtime paths stay on the APIs', async () => {
+    for (const origin of [api, merchantOrigin, courierOrigin]) {
+      const page = await fetch(origin + '/');
+      assert.equal(page.status, 200); assert.match(page.headers.get('content-type') || '', /text\/html/);
+      assert.match(await page.text(), /<html/i);
+    }
+    for (const origin of [merchantOrigin, courierOrigin]) {
+      const tasks = await fetch(origin + '/tasks');
+      assert.equal(tasks.status, 200); assert.match(tasks.headers.get('content-type') || '', /text\/html/);
+      for (const path of ['/api/config', '/.well-known/jwks.json', '/health']) {
+        const response = await fetch(origin + path);
+        assert.equal(response.status, 200, origin + path); assert.match(response.headers.get('content-type') || '', /application\/json/);
+      }
+      const platform = await fetch(origin + '/api/v2/session');
+      assert.equal(platform.status, 401); assert.match(platform.headers.get('content-type') || '', /application\/json/);
+    }
+    for (const path of ['/health', '/.well-known/jwks.json']) assert.match((await fetch(api + path)).headers.get('content-type') || '', /application\/json/);
+    assert.equal((await fetch(api + '/api/v2/session')).status, 401);
+  });
+  await check('verifier and sign-in limits hold through Caddy; a spoofed X-Forwarded-For does not reset them', async () => {
+    const verify = (headers = {}) => fetch(merchantOrigin + '/api/v1/receipts/verify', {method: 'POST', headers: {'Content-Type': 'application/json', ...headers}, body: JSON.stringify({receipt: 'not-a-receipt'})});
+    for (let index = 0; index < 30; index++) assert.equal((await verify()).status, 200);
+    const limited = await verify();
+    assert.equal(limited.status, 429); assert.ok(Number(limited.headers.get('retry-after')) > 0);
+    assert.equal(limited.headers.get('access-control-allow-origin'), '*');
+    assert.equal((await verify({'X-Forwarded-For': '203.0.113.77'})).status, 429);
+    // Earlier checks in this run already signed in from this client; count until the limit applies.
+    async function exhaust(url, origin, body) {
+      for (let index = 1; index <= 25; index++) {
+        const response = await fetch(url, {method: 'POST', headers: {Origin: origin, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+        if (response.status === 429) return index;
+        assert.ok([401, 403].includes(response.status), url + ' returned ' + response.status);
+      }
+      assert.fail(url + ' was never rate limited');
+    }
+    assert.ok(await exhaust(courierOrigin + '/api/v1/session', courierOrigin, {password: 'wrong-password'}) <= 21);
+    const spoofed = await fetch(courierOrigin + '/api/v1/session', {method: 'POST', headers: {Origin: courierOrigin, 'Content-Type': 'application/json', 'X-Forwarded-For': '203.0.113.78'}, body: JSON.stringify({password: 'wrong-password'})});
+    assert.equal(spoofed.status, 429);
+    assert.ok(await exhaust(api + '/api/v2/session', api, {login: 'release-approver', password: 'wrong-password'}) <= 21);
+  });
   console.log(JSON.stringify({passed: tests.length, tests}));
 } finally { await Promise.all(Object.values(databases).map(database => database.close())); }

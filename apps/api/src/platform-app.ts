@@ -25,6 +25,7 @@ import {
 import { equal, type signer } from './security';
 import { ApiError } from './application/errors';
 import { errorResponse, notFoundResponse } from './http/error-handler';
+import { rateLimit } from './http/rate-limit';
 import { logRequest } from './observability/logger';
 import type { PlatformConfig } from './platform-config';
 import type { handoffService } from './services/handoffs';
@@ -95,10 +96,12 @@ export function createPlatformApp(
   });
   app.get('/.well-known/jwks.json', (c) => {
     c.header('Access-Control-Allow-Origin', '*');
-    return c.json({ keys: [signing.jwk] });
+    return c.json(signing.jwks);
   });
+  // Sign-in is a password check open to anyone: 20 attempts per client, 300 in total, per minute.
   app.post(
     '/api/v2/session',
+    rateLimit({ windowMs: 60_000, perClient: 20, total: 300 }),
     async (c, next) => {
       if (!config.allowedOrigins.includes(c.req.header('Origin') || ''))
         throw new ApiError('ORIGIN_NOT_ALLOWED', 403);

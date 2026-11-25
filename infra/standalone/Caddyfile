@@ -3,8 +3,17 @@
 	cert_issuer {$CADDY_TLS_ISSUER:acme}
 }
 
+# API, discovery and runtime paths go straight to the APIs, so their X-Forwarded-For is set by
+# Caddy alone (the APIs' rate limits rely on it). All other paths are pages from the Next.js sites.
+
 {$PLATFORM_DOMAIN} {
-	reverse_proxy platform:5300
+	@platform path /api/v2 /api/v2/* /.well-known/* /health /ready
+	handle @platform {
+		reverse_proxy platform:5300
+	}
+	handle {
+		reverse_proxy dashboard-web:3000
+	}
 }
 
 {$MERCHANT_DOMAIN} {
@@ -12,8 +21,12 @@
 	handle @platform {
 		reverse_proxy platform:5300
 	}
-	handle {
+	@api path /api/* /runtime/* /.well-known/* /agent-manifest.json /links.json /agent-mcp.json /merchant.network.json /actions.js /action-policy.json /action-bridge.html /health /ready
+	handle @api {
 		reverse_proxy merchant:5100
+	}
+	handle {
+		reverse_proxy merchant-web:3000
 	}
 }
 
@@ -22,7 +35,11 @@
 	handle @platform {
 		reverse_proxy platform:5300
 	}
-	handle {
+	@api path /api/* /runtime/* /.well-known/* /agent-manifest.json /links.json /agent-mcp.json /courier.network.json /actions.js /action-policy.json /action-bridge.html /health /ready
+	handle @api {
 		reverse_proxy courier:5200
+	}
+	handle {
+		reverse_proxy courier-web:3000
 	}
 }

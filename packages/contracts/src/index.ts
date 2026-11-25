@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { Resolution } from './delivery-claims';
+import { HandoffReceiptClaims } from './handoffs';
 export * from './handoffs';
 
 export const Origin = z.url().refine(value => {
@@ -28,8 +30,24 @@ export const ReceiptClaims = z.strictObject({
   caseId: z.string().min(1), receiptId: z.uuid(), caseType: z.literal('delivery_damage'),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/), approvedFields: Fields,
   status: z.literal('accepted'), receivedAt: z.iso.datetime(),
-  governance: DeliveryGovernance.optional(),
+  governance: DeliveryGovernance.optional(), resolution: Resolution.optional(),
 });
+/** Public receipt verification: anyone may submit a receipt; only configured issuers are trusted. */
+export const VerifyReceiptRequest = z.strictObject({receipt: z.string().min(1).max(16384)});
+export const ReceiptVerification = z.discriminatedUnion('valid', [
+  z.strictObject({
+    valid: z.literal(true), issuer: Origin, keyId: z.string(),
+    receipt: z.discriminatedUnion('kind', [
+      z.strictObject({kind: z.literal('delivery_case'), claims: ReceiptClaims}),
+      z.strictObject({kind: z.literal('handoff'), claims: HandoffReceiptClaims}),
+    ]),
+  }),
+  z.strictObject({
+    valid: z.literal(false),
+    reasonCode: z.enum(['MALFORMED', 'UNSUPPORTED_TYPE', 'UNTRUSTED_ISSUER', 'SIGNATURE_INVALID', 'CLAIMS_INVALID']),
+  }),
+]);
+export type ReceiptVerification = z.infer<typeof ReceiptVerification>;
 export const ApprovalClaims = z.strictObject({
   issuer: Origin, audience: Origin, transferId: z.uuid(), subject: z.literal('demo-user'),
   caseType: z.literal('delivery_damage'), payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -97,10 +115,11 @@ export const errorMessages: Record<string,string> = {
   CSRF_MISMATCH:'Your session has changed. Sign in again before continuing.', REQUEST_CONFLICT:'This transfer has already changed. Check its current status.',
   CONSENT_REQUIRED:'Sharing approval is required or has expired. Review a new transfer.',
   CONSENT_SCOPE_MISMATCH:'The proposed details differ from your approval. The transfer was stopped.',
-  RECIPIENT_NOT_ALLOWED:'This recipient is not allowed.', NOT_FOUND:'The requested record was not found.',
+  RECIPIENT_NOT_ALLOWED:'This recipient is not allowed.', RATE_LIMITED:'Too many requests. Wait a minute and try again.', VERIFICATION_UNAVAILABLE:'The signing keys of the issuing site could not be reached, so this receipt was not checked. Try again later.', POLICY_VIOLATION:'The proposed decision is not allowed by the courier claims policy.', NOT_FOUND:'The requested record was not found.',
   PAYLOAD_TOO_LARGE:'The request is too large. Shorten the case details.', NOT_READY:'The service is not ready. Try again later.',
   DATABASE_UNAVAILABLE:'Case storage is unavailable. Check the transfer before trying again.',
   PROVIDER_NOT_CONFIGURED:'The AI service is not configured. Contact the demo operator.',
+  MODEL_NOT_ALLOWED:'This site only runs its configured AI model. Reload the page and try again.',
   PROVIDER_CONNECTION_FAILED:'The server could not connect to the AI provider. Contact the demo operator.',
   PROVIDER_AUTHENTICATION_FAILED:'The AI provider rejected the server credentials. Contact the demo operator.',
   PROVIDER_CREDITS_EXHAUSTED:'The AI provider account needs attention. Contact the demo operator.',
