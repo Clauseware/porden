@@ -30,6 +30,8 @@ const env = {
   PARTNER_SECRET: 'p'.repeat(32),
   DEMO_PASSWORD: 'demo-password',
   SIGNING_KEY_PATH: keyPath,
+  GROQ_API_KEY: 'unit-groq-key',
+  GROQ_MODEL: 'unit/groq-model',
 };
 const config = loadConfig(env),
   signing = signer(config);
@@ -312,7 +314,14 @@ describe('consistent failure boundaries', () => {
       [500, 'PROVIDER_UNAVAILABLE', 502],
     ] as const)
       await check(
-        await provider(async () => new Response('private-secret', { status: upstream })),
+        // A long Retry-After keeps the 429 case from waiting on the fallback provider.
+        await provider(
+          async () =>
+            new Response('private-secret', {
+              status: upstream,
+              headers: { 'Retry-After': '300' },
+            }),
+        ),
         code,
         status,
       );
@@ -393,5 +402,225 @@ describe('consistent failure boundaries', () => {
         ),
     );
     await expect(response.text()).rejects.toThrow(errorMessages.PROVIDER_UNAVAILABLE);
+  });
+});
+
+describe('Groq fallback for the model route', () => {
+  const db = { ready: async () => {} } as ReturnType<typeof store>;
+  const fallbackConfig = loadConfig({
+    ...env,
+    OPENROUTER_API_KEY: 'openrouter-private-key',
+    OPENROUTER_MODEL: 'primary/model:free',
+    GROQ_API_KEY: 'groq-private-key',
+    GROQ_MODEL: 'openai/gpt-oss-120b',
+  });
+  const tools = sessionTools(fallbackConfig),
+    token = tools.issue();
+  // A mid-session turn: history with a completed tool call whose result must survive the switch.
+  const turn = {
+    model: 'primary/model:free',
+    stream: true,
+    messages: [
+      { role: 'user', content: 'Check order DEMO-1042' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'tool_0_or-abc',
+            type: 'function',
+            function: { name: 'get_order', arguments: '{"ref":"DEMO-1042"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'tool_0_or-abc', content: '{"status":"delivered"}' },
+    ],
+    tools: [
+      {
+        type: 'function',
+        function: { name: 'get_order', parameters: { type: 'object', properties: {} } },
+      },
+    ],
+    tool_choice: 'auto',
+  };
+  const sse = (text: string) =>
+    new Response(`data: {"choices":[{"delta":{"content":"${text}"}}]}\n\ndata: [DONE]\n\n`, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  type Call = { host: string; body: Record<string, unknown>; auth: string };
+  function route(
+    primary: () => Promise<Response>,
+    groq: () => Promise<Response> = async () => sse('groq'),
+  ) {
+    const calls: Call[] = [];
+    const app = createApp(fallbackConfig, db, signing, async (input, init) => {
+      const host = new URL(String(input)).host;
+      calls.push({
+        host,
+        body: JSON.parse(String(init?.body)),
+        auth: new Headers(init?.headers).get('Authorization') || '',
+      });
+      return host === 'openrouter.ai' ? primary() : groq();
+    });
+    const send = (signal?: AbortSignal) =>
+      app.request('/api/llm/chat/completions', {
+        method: 'POST',
+        signal,
+        headers: {
+          Origin: fallbackConfig.origin,
+          Cookie: `porden_merchant_session=${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(turn),
+      });
+    return { calls, send };
+  }
+
+  test('the Groq key and model are required configuration', () => {
+    expect(() => loadConfig({ ...env, GROQ_API_KEY: '' })).toThrow('GROQ_API_KEY is required');
+    expect(() => loadConfig({ ...env, GROQ_MODEL: undefined })).toThrow('GROQ_MODEL is required');
+  });
+
+  test('rate limits, quota, transient errors and network failures switch to Groq with the turn intact', async () => {
+    for (const primary of [
+      async () => new Response('busy', { status: 429 }),
+      async () => new Response('no credits', { status: 402 }),
+      async () => new Response('down', { status: 503 }),
+      async () => {
+        throw new TypeError('Connection refused');
+      },
+    ]) {
+      const logs = spyOn(logger, 'warn').mockImplementation(() => {});
+      try {
+        const { calls, send } = route(primary);
+        const response = await send();
+        expect(response.status).toBe(200);
+        expect(await response.text()).toContain('groq');
+        expect(calls.map((call) => call.host)).toEqual(['openrouter.ai', 'api.groq.com']);
+        // Same history, tools, tool call IDs and tool results; only the model changes.
+        expect(calls[1].body).toEqual({ ...turn, model: 'openai/gpt-oss-120b' });
+        expect(calls[0].auth).toBe('Bearer openrouter-private-key');
+        expect(calls[1].auth).toBe('Bearer groq-private-key');
+        const logged = JSON.stringify(logs.mock.calls);
+        expect(logged).toContain('llm.provider_fallback');
+        expect(logged).toContain('primary/model:free');
+        expect(logged).toContain('openai/gpt-oss-120b');
+        expect(logged).not.toContain('private-key');
+      } finally {
+        logs.mockRestore();
+      }
+    }
+  });
+
+  test('request and credential errors do not switch providers', async () => {
+    for (const [status, code] of [
+      [400, 'PROVIDER_REQUEST_REJECTED'],
+      [401, 'PROVIDER_AUTHENTICATION_FAILED'],
+      [404, 'PROVIDER_MODEL_UNAVAILABLE'],
+    ] as const) {
+      const { calls, send } = route(async () => new Response('x', { status }));
+      const response = await send();
+      expect((await response.json()).error.code).toBe(code);
+      expect(calls.map((call) => call.host)).toEqual(['openrouter.ai']);
+    }
+  });
+
+  test('a stream that already started is never replayed on Groq', async () => {
+    const { calls, send } = route(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[]}\n\n'));
+              controller.error(Error('reset'));
+            },
+          }),
+        ),
+    );
+    const response = await send();
+    await expect(response.text()).rejects.toThrow(errorMessages.PROVIDER_UNAVAILABLE);
+    expect(calls.map((call) => call.host)).toEqual(['openrouter.ai']);
+  });
+
+  test('a departed client gets no fallback request', async () => {
+    const controller = new AbortController();
+    const { calls, send } = route(async () => {
+      controller.abort();
+      throw new DOMException('aborted', 'AbortError');
+    });
+    expect((await send(controller.signal)).status).toBe(504);
+    expect(calls.map((call) => call.host)).toEqual(['openrouter.ai']);
+  });
+
+  test('rate-limited providers are rested until Retry-After instead of being hammered', async () => {
+    const logs = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const limited = (retryAfter: string) => async () =>
+        new Response('busy', { status: 429, headers: { 'Retry-After': retryAfter } });
+      // OpenRouter limited: the next turn goes straight to Groq.
+      const primaryOnly = route(limited('30'));
+      await (await primaryOnly.send()).text();
+      await (await primaryOnly.send()).text();
+      expect(primaryOnly.calls.map((call) => call.host)).toEqual([
+        'openrouter.ai',
+        'api.groq.com',
+        'api.groq.com',
+      ]);
+      // Groq limited beyond the wait bound (for example its daily quota): a clear rate-limit error,
+      // and no upstream calls while both rest.
+      const both = route(limited('30'), limited('120'));
+      const first = await both.send();
+      expect(first.status).toBe(429);
+      expect((await first.json()).error.code).toBe('PROVIDER_RATE_LIMITED');
+      const second = await both.send();
+      expect(second.status).toBe(429);
+      expect((await second.json()).error.code).toBe('PROVIDER_RATE_LIMITED');
+      expect(both.calls.map((call) => call.host)).toEqual(['openrouter.ai', 'api.groq.com']);
+    } finally {
+      logs.mockRestore();
+    }
+  });
+
+  test('Groq Retry-After waits repeat within the total wait budget, then fail fast', async () => {
+    const logs = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const limited = (retryAfter: string) =>
+        new Response('tpm', { status: 429, headers: { 'Retry-After': retryAfter } });
+      let groqCalls = 0;
+      const { calls, send } = route(
+        async () => new Response('busy', { status: 503 }),
+        async () => ((groqCalls += 1) < 3 ? limited('1') : sse('groq')),
+      );
+      const started = Date.now();
+      const response = await send();
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('groq');
+      expect(Date.now() - started).toBeGreaterThanOrEqual(1900);
+      expect(calls.map((call) => call.host)).toEqual([
+        'openrouter.ai',
+        'api.groq.com',
+        'api.groq.com',
+        'api.groq.com',
+      ]);
+      expect(calls[2].body).toEqual(calls[1].body);
+      expect(calls[3].body).toEqual(calls[1].body);
+      expect(JSON.stringify(logs.mock.calls)).toContain('llm.provider_rate_limit_wait');
+      // A Retry-After that would take the total wait past 90 s is reported, not waited out.
+      let budgetCalls = 0;
+      const exhausted = route(
+        async () => new Response('busy', { status: 503 }),
+        async () => ((budgetCalls += 1) === 1 ? limited('1') : limited('90')),
+      );
+      const failed = await exhausted.send();
+      expect(failed.status).toBe(429);
+      expect((await failed.json()).error.code).toBe('PROVIDER_RATE_LIMITED');
+      expect(exhausted.calls.map((call) => call.host)).toEqual([
+        'openrouter.ai',
+        'api.groq.com',
+        'api.groq.com',
+      ]);
+    } finally {
+      logs.mockRestore();
+    }
   });
 });

@@ -36,6 +36,7 @@ import { courierClaimPolicy } from './services/courier-claim-policy';
 import { courierClaims } from './services/courier-claims';
 import { merchantClaims, orderFacts } from './services/merchant-claims';
 import { checkReceipt } from './services/receipt-verification';
+import { llmProvider } from './services/llm-provider';
 
 type Store = ReturnType<typeof store>;
 export function createApp(
@@ -46,6 +47,7 @@ export function createApp(
 ) {
   const app = new Hono();
   const sessions = sessionTools(config);
+  const provider = llmProvider(config, fetcher);
   const cookieName = `porden_${config.role}_session`;
   function failure(
     c: Context,
@@ -182,52 +184,11 @@ export function createApp(
       .parse(await c.req.json());
     // The site pays for this route, so it serves only the configured model; clients cannot choose another.
     if (body.model !== config.model) throw new ApiError('MODEL_NOT_ALLOWED', 400);
-    const response = await fetcher('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      redirect: 'error',
-      signal: c.req.raw.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.openrouterKey}`,
-      },
-      body: JSON.stringify(body),
-    }).catch((cause) => {
-      throw new ApiError(
-        cause instanceof Error && ['TimeoutError', 'AbortError'].includes(cause.name)
-          ? 'PROVIDER_TIMEOUT'
-          : 'PROVIDER_CONNECTION_FAILED',
-        cause instanceof Error && ['TimeoutError', 'AbortError'].includes(cause.name) ? 504 : 502,
-        undefined,
-        { cause },
-      );
-    });
-    if (!response.ok) {
-      await response.body
-        ?.cancel()
-        .catch((cause) =>
-          reportError(
-            'provider response cleanup',
-            cause,
-            c.res.headers.get('X-Request-Id') || undefined,
-          ),
-        );
-      const upstream: Record<number, [string, ApiError['status']]> = {
-        400: ['PROVIDER_REQUEST_REJECTED', 502],
-        401: ['PROVIDER_AUTHENTICATION_FAILED', 502],
-        403: ['PROVIDER_AUTHENTICATION_FAILED', 502],
-        402: ['PROVIDER_CREDITS_EXHAUSTED', 503],
-        404: ['PROVIDER_MODEL_UNAVAILABLE', 502],
-        408: ['PROVIDER_TIMEOUT', 504],
-        422: ['PROVIDER_REQUEST_REJECTED', 502],
-        429: ['PROVIDER_RATE_LIMITED', 429],
-        504: ['PROVIDER_TIMEOUT', 504],
-      };
-      const [code, status] = upstream[response.status] || ['PROVIDER_UNAVAILABLE', 502];
-      throw new ApiError(code, status, undefined, { cause: { upstreamStatus: response.status } });
-    }
+    const requestId = c.res.headers.get('X-Request-Id') || undefined;
+    // OpenRouter first; Groq only when OpenRouter is rate-limited, exhausted or unreachable.
+    const response = await provider.complete(body, c.req.raw.signal, requestId);
     if (!response.body) throw new ApiError('PROVIDER_UNAVAILABLE', 502);
-    const reader = response.body.getReader(),
-      requestId = c.res.headers.get('X-Request-Id') || undefined;
+    const reader = response.body.getReader();
     const bodyStream = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {

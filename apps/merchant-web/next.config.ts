@@ -2,6 +2,8 @@ import type { NextConfig } from 'next';
 const backend = process.env.API_INTERNAL_ORIGIN || 'http://127.0.0.1:5100';
 const config: NextConfig = {
   transpilePackages: ['@porden/sdk', '@porden/contracts'],
+  // The proxied model route can wait on provider rate limits for longer than the 30 s default.
+  experimental: { proxyTimeout: 120_000 },
   async rewrites() {
     return [
       {

@@ -126,6 +126,8 @@ services:
       PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set the Groq API key}
+      GROQ_MODEL: ${GROQ_MODEL:?Set the Groq fallback model}
     secrets:
       - source: merchant_signing_key
         target: signing_key
@@ -152,6 +154,8 @@ services:
       PORDEN_EXTRA_CA_BASE64: ${PORDEN_EXTRA_CA_BASE64:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set the Groq API key}
+      GROQ_MODEL: ${GROQ_MODEL:?Set the Groq fallback model}
     secrets:
       - source: courier_signing_key
         target: signing_key

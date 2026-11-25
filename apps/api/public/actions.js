@@ -348,6 +348,21 @@ export async function registerActions(actions) {
       throw error;
     }
   };
+  // The runtime carries action results into later model calls. Signed receipt tokens and the copy
+  // of the latest receipt are for verifiers, not the model; the handoff keeps every receipt's claims,
+  // approvals, versions and executions, and the server keeps the signed receipts.
+  const withoutSignedReceipts = ({ receipt: _receipt, ...result }) =>
+    result.handoff?.receipts
+      ? {
+          ...result,
+          handoff: {
+            ...result.handoff,
+            receipts: result.handoff.receipts.map(
+              ({ signedReceipt: _signed, ...claims }) => claims,
+            ),
+          },
+        }
+      : result;
   if (role === 'courier')
     actions.register({
       name: 'courier_claim_decision',
@@ -376,10 +391,12 @@ export async function registerActions(actions) {
       },
       async execute(args, context) {
         const { handoffId, ...decision } = args;
-        return claimWrite(
-          `/api/v1/claims/${encodeURIComponent(handoffId)}/decisions`,
-          { ...decision, requestId: await operationId(context.requestId) },
-          context.signal,
+        return withoutSignedReceipts(
+          await claimWrite(
+            `/api/v1/claims/${encodeURIComponent(handoffId)}/decisions`,
+            { ...decision, requestId: await operationId(context.requestId) },
+            context.signal,
+          ),
         );
       },
     });
@@ -443,10 +460,12 @@ export async function registerActions(actions) {
       },
       async execute(args, context) {
         const { handoffId, ...answer } = args;
-        return claimWrite(
-          `/api/v1/claims/${encodeURIComponent(handoffId)}/clarifications/resolve`,
-          { ...answer, requestId: await operationId(context.requestId) },
-          context.signal,
+        return withoutSignedReceipts(
+          await claimWrite(
+            `/api/v1/claims/${encodeURIComponent(handoffId)}/clarifications/resolve`,
+            { ...answer, requestId: await operationId(context.requestId) },
+            context.signal,
+          ),
         );
       },
     });
