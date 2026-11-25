@@ -1,0 +1,277 @@
+/* Claims desk. Colours and fonts come from apps/brand.css; panels, buttons, notices and the
+   timeline reuse globals.css. This file only adds the app-window layout. */
+.claims-app {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 0;
+  margin-top: 32px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.claims-side {
+  padding: 20px 16px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.claims-side ul {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.claims-side-title {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.claims-side-title:first-child {
+  margin-top: 0;
+}
+.stage-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 12px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.stage-button:hover {
+  background: var(--surface-raised);
+}
+.stage-button[aria-pressed='true'],
+.stage-button[aria-current='step'] {
+  background: var(--bg);
+  border-color: var(--field-border);
+}
+.stage-button.static {
+  cursor: default;
+}
+.stage-button.static:hover {
+  background: transparent;
+}
+.stage-button.static[aria-current='step']:hover {
+  background: var(--bg);
+}
+.count {
+  min-width: 28px;
+  padding: 2px 8px;
+  text-align: center;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+}
+.claims-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.claims-main {
+  padding: 24px;
+  min-width: 0;
+}
+.claims-main h1,
+.claims-detail h1 {
+  font-size: 28px;
+  letter-spacing: -0.5px;
+  margin: 0 0 6px;
+}
+.claims-main h1:focus,
+.claims-detail h1:focus,
+.claims-result h2:focus {
+  outline: none;
+}
+.claims-detail {
+  margin-top: 32px;
+}
+.claims-empty {
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px dashed var(--field-border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+.claims-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.claims-list li + li {
+  border-top: 1px solid var(--border);
+}
+.claim-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 14px 16px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+}
+.claim-row:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.claim-main,
+.claim-side {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.claim-side {
+  justify-items: end;
+  text-align: right;
+}
+.stage-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.claims-pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.claims-pager .hint {
+  margin: 0;
+}
+.claims-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+.claims-col {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.claims-card {
+  padding: 20px;
+}
+.claims-card h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.claims-card h3 {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+.plain-list,
+.decision-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.decision-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.decision-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.decision-list li[data-allowed='false'] {
+  color: var(--muted);
+}
+.claims-card .timeline {
+  margin: 12px 0;
+}
+.claims-card .timeline li {
+  display: grid;
+  gap: 2px;
+}
+.claims-live {
+  min-height: 0;
+}
+.claims-result h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.claims-result.refused,
+.claims-result.error {
+  border-left-color: var(--danger);
+}
+.claims-result.ok {
+  border-left-color: var(--success);
+}
+.claims-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--lavender);
+}
+.claims-details summary:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 3px;
+}
+.claims-card button {
+  min-height: 44px;
+}
+.claims-card button + button,
+.claims-card textarea + .hint + button {
+  margin-right: 8px;
+}
+@media (max-width: 860px) {
+  .claims-app {
+    grid-template-columns: 1fr;
+  }
+  .claims-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .claims-side ul {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .claims-side li {
+    flex: 1 1 auto;
+  }
+  .claims-cols {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .claims-main {
+    padding: 16px;
+  }
+  .claim-row {
+    flex-direction: column;
+  }
+  .claim-side {
+    justify-items: start;
+    text-align: left;
+  }
+}
