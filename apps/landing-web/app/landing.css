@@ -299,6 +299,23 @@ pre {
 
 /* hero */
 .hero {
+  position: relative;
+}
+/* The vortex fills the viewport width behind the hero and never takes a click or focus. */
+.hero-vortex {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 50vw);
+  width: 100vw;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.hero > :not(.hero-vortex) {
+  position: relative;
+  z-index: 1;
+}
+.hero {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: var(--s-5);

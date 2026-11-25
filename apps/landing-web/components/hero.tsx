@@ -1,3 +1,4 @@
+import { HeroVortex } from './hero-vortex';
 import { Illo } from './illo';
 import { LANDING_LINKS } from './landing-links';
 import { CheckCircleIcon, PendingIcon, RunningIcon } from './icons';
@@ -5,7 +6,8 @@ import { CheckCircleIcon, PendingIcon, RunningIcon } from './icons';
 export function Hero() {
   return (
     <section className="hero wrap" aria-labelledby="hero-title">
-      <div className="hero__copy">
+      <HeroVortex />
+      <div className="hero__copy" data-vortex-calm>
         <h1 id="hero-title">Hand off tasks between organizations on exact terms</h1>
         <p className="lead">
           Porden moves a task from one organization to another. Each handoff has a locked version, a
@@ -51,7 +53,7 @@ export function Hero() {
           </ul>
         </figure>
       </div>
-      <dl className="figures">
+      <dl className="figures" data-vortex-calm>
         <div>
           <dt>Locked versions</dt>
           <dd>The terms of a version never change. A change creates a new version.</dd>
