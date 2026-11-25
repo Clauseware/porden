@@ -15,6 +15,13 @@
       "when": 1795514965114,
       "tag": "0001_romantic_invisible_woman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795599239575,
+      "tag": "0002_merchant_claims",
+      "breakpoints": true
     }
   ]
 }

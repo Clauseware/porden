@@ -497,6 +497,74 @@ try {
       await s.context.close();
     }
   });
+
+  await scenario('B9 lost filing answer recovered in the real merchant UI; case sent from a different tab', async () => {
+    const s = await session({ ...merchantFiles({ photoProvided: true, remedy: 'partial_refund', partialRefundMinor: 3_000 }), ...courierFollowsPolicy });
+    // The merchant server commits the filing, then the browser loses its answer.
+    let dropped = false;
+    await s.context.route(`${origins.merchant}/api/v1/claims`, async (route: Route) => {
+      if (route.request().method() !== 'POST' || dropped) return route.continue();
+      dropped = true;
+      const committed = await route.fetch();
+      assert.equal(committed.status(), 201);
+      await route.abort('connectionreset');
+    });
+    const filing = s.merchant;
+    await filing.goto(`${origins.merchant}/claims/new`);
+    await filing.getByLabel('Describe the damage').fill('The vase arrived cracked in a crushed box.');
+    await filing.getByRole('button', { name: 'Send', exact: true }).click();
+    await filing.getByRole('button', { name: 'Review and send', exact: true }).click();
+    await filing.getByRole('button', { name: 'Confirm actions', exact: true }).click();
+    // The UI reports the unknown outcome and reconciles it read-only: no second filing.
+    await filing.getByRole('heading', { name: 'Claim sent', exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(dropped, true);
+    const href = await filing.getByRole('link', { name: 'Open your claim', exact: true }).getAttribute('href');
+    const handoffId = decodeURIComponent(href?.split('/').pop() ?? '');
+    assert.match(handoffId, /^[0-9a-f-]{36}$/);
+    const rows = await stack.merchantSql`SELECT handoff_id, consent_data FROM merchant_claims WHERE handoff_id = ${handoffId}`;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].consent_data.damageDescription, 'Vase damaged in transit');
+    assert.equal((await stack.merchantSql`SELECT count(*)::int AS n FROM merchant_claims WHERE handoff_id IS NULL`)[0].n, 0);
+
+    const reviewed = await review(s, handoffId);
+    assert.equal(reviewed.outcome.status, 'succeeded');
+
+    // A different tab (empty session storage) finds the claim and sends the case.
+    const other = await s.context.newPage();
+    await other.goto(`${origins.merchant}/claims`);
+    await other.locator(`a[href="/claims/${handoffId}"]`).click();
+    await other.getByRole('heading', { name: 'Send case to courier', exact: true }).waitFor();
+    await other.getByRole('heading', { name: 'Fields that will be shared', exact: true }).waitFor();
+    assert.equal(await other.evaluate(() => sessionStorage.length), 0);
+    await other.getByRole('button', { name: 'Send case to courier', exact: true }).click();
+    await other.getByRole('button', { name: 'Send case', exact: true }).click({ timeout: 30_000 });
+    await other.getByRole('button', { name: 'Confirm actions', exact: true }).click({ timeout: 30_000 });
+    const opened = other.waitForEvent('popup');
+    await other.getByRole('button', { name: 'Open action site', exact: true }).click();
+    const bridge = await opened;
+    await bridge.getByRole('button', { name: 'Confirm actions', exact: true }).click();
+    // After a successful send the claim reloads and its status line says so.
+    await other
+      .getByText('The case was sent.', { exact: false })
+      .first()
+      .waitFor({ timeout: 30_000 })
+      .catch(async (error: unknown) => {
+        await other.screenshot({ path: resolve(proof, 'b9-send-failed.png'), fullPage: true });
+        throw Error(`Case not sent. Page said: ${await other.locator('.claims-live').innerText()}`, { cause: error });
+      });
+    // Sent: the consented details are cleared and the claim stays listed.
+    const after = await stack.merchantSql`SELECT consent_data, consent_cleared_at FROM merchant_claims WHERE handoff_id = ${handoffId}`;
+    assert.equal(after[0].consent_data, null);
+    assert.ok(after[0].consent_cleared_at);
+    await other.goto(`${origins.merchant}/claims`);
+    await other.locator(`a[href="/claims/${handoffId}"]`).waitFor();
+    await other.screenshot({ path: resolve(proof, 'b9-claims-list.png'), fullPage: true });
+    await other.goto(`${origins.merchant}/claims/${handoffId}`);
+    await other.getByRole('link', { name: 'Your claims', exact: true }).first().waitFor();
+    await other.screenshot({ path: resolve(proof, 'b9-claim-sent.png'), fullPage: true });
+    assert.deepEqual(s.errors, []);
+    await s.context.close();
+  });
 } finally {
   await browser.close();
   for (const proc of processes)

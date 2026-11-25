@@ -1,5 +1,6 @@
 import { ErrorResponse, HandoffMutation, ReceiptVerification, Session } from '@porden/contracts';
 import {
+  ClaimConsentResponse,
   ClaimEvaluation,
   ClaimInbox,
   ClaimPolicy,
@@ -7,6 +8,7 @@ import {
   CourierClaimDecision,
   ExecutionRecovery,
   FileClaim,
+  MerchantClaimList,
   OrderFacts,
   ResolveClaimClarification,
 } from '@porden/contracts/delivery-claims';
@@ -73,7 +75,10 @@ export function createMerchantClaimsClient() {
     courierPolicy: (courierOrigin: string) =>
       call(ClaimPolicy, `${courierOrigin}/api/v1/claim-policy`, { credentials: 'omit' }),
     file: (body: FileClaim) => call(ClaimView, '/api/v1/claims', { body, csrf }),
+    claims: () => call(MerchantClaimList, '/api/v1/claims'),
     claim: (handoffId: string) => call(ClaimView, `/api/v1/claims/${id(handoffId)}`),
+    consent: (handoffId: string) =>
+      call(ClaimConsentResponse, `/api/v1/claims/${id(handoffId)}/consent`),
     answerClarification: (handoffId: string, body: z.input<typeof ResolveClaimClarification>) =>
       call(ClaimView, `/api/v1/claims/${id(handoffId)}/clarifications/resolve`, { body, csrf }),
     cancel: (handoffId: string, body: { requestId: string; version: number }) =>

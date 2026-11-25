@@ -61,6 +61,8 @@ Amounts are integer minor units (cents). Currency is ISO 4217.
 | GET | `/api/v1/orders/DEMO-1042` | → `OrderFacts` |
 | POST | `/api/v1/claims` | `FileClaim` → `ClaimView` (201). Normally submitted by the `merchant_file_claim` action, not by hand. |
 | GET | `/api/v1/claims/:handoffId` | → `ClaimView` |
+| GET | `/api/v1/claims` | → `MerchantClaimList`: the signed-in customer's claims filed on this merchant, newest first (up to 50). |
+| GET | `/api/v1/claims/:handoffId/consent` | → `ClaimConsentResponse`: the exact consented `data` and `approvedFields` for sending the case, or `consent: null` once the case was sent or the claim closed. 404 if this customer did not file the claim here. |
 | POST | `/api/v1/claims/:handoffId/clarifications/resolve` | `ResolveClaimClarification` → `ClaimView` |
 | POST | `/api/v1/claims/:handoffId/cancel` | `{requestId, version}` → `ClaimView` |
 | GET | `/api/v1/claims/operations/:requestId` | → `HandoffMutation` (read-only reconciliation) |
@@ -71,6 +73,11 @@ The courier also publishes its policy at `GET {courierOrigin}/api/v1/claim-polic
 Customer consent rules:
 - `approvedFields` must exactly equal the keys of `data`; anything else is refused with `CONSENT_SCOPE_MISMATCH`.
 - `merchant_file_claim` derives `approvedFields` from the data it sends. The UI must therefore show the customer which fields will be shared before they submit.
+
+Consent storage and the stale-filing sweep:
+- The merchant stores the consented `data` and `approvedFields` before it calls the platform, keyed by the filing's `requestId`. It links them to the claim when the filing succeeds or when `GET /api/v1/claims/operations/:requestId` reconciles it. A failed or uncertain filing keeps its consent; it is never deleted on an error.
+- A filing left unlinked for more than 10 minutes is settled by a sweep: linked if the platform created a claim from this consent, deleted if the platform has no record of it, kept while the platform can't be reached. An exact replay restarts the 10 minutes, so a sweep can't remove a filing whose replay is in flight.
+- **Limitation:** the sweep runs only when `GET /api/v1/claims` (the "Your claims" page) is loaded, up to 20 filings per run. Until then an unlinked filing's consented details stay in the merchant database. With the single demo customer any visit to "Your claims" covers every filing; a deployment with real customers needs the sweep on a server timer (deferred).
 
 ## 4. Courier API (courier staff session; same-origin; `X-CSRF-Token` on POST)
 

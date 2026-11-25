@@ -1,6 +1,6 @@
 import type { SQL } from 'bun';
 import { randomUUID } from 'node:crypto';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sql';
 import {
   type Draft,
@@ -13,12 +13,12 @@ import {
   type DeliveryGovernance,
 } from '@porden/contracts';
 import type { z } from 'zod';
-import type { Resolution } from '@porden/contracts/delivery-claims';
+import type { ClaimConsent, Resolution } from '@porden/contracts/delivery-claims';
 import { ApiError } from '../application/errors';
 import { hash, type signer, type Fetcher } from '../security';
 import { verifyDeliveryConsent } from '../services/delivery-authorization';
 import type { Config } from '../config';
-import { transfers, transferEvents } from './merchant-schema';
+import { merchantClaims, transfers, transferEvents } from './merchant-schema';
 import { cases, receipts, shipments } from './courier-schema';
 import { migrationMetadata } from './metadata';
 
@@ -60,6 +60,18 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
       idempotent,
     };
   }
+  function clearConsent(connection: typeof db | Transaction, handoffId: string) {
+    return connection
+      .update(merchantClaims)
+      .set({ consentData: null, approvedFields: null, consentClearedAt: new Date() })
+      .where(
+        and(
+          eq(merchantClaims.handoffId, handoffId),
+          eq(merchantClaims.customerId, 'demo-user'),
+          isNotNull(merchantClaims.consentData),
+        ),
+      );
+  }
   return {
     async ready() {
       const [row] = await db
@@ -82,6 +94,123 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
         })
         .returning();
       return draft(row);
+    },
+    /**
+     * Stores the consent for a filing before the platform is called. An exact replay of a filing
+     * that is not linked yet restarts its clock, so the stale-filing sweep can't remove it while
+     * the replay is in flight. Any other replay returns the existing record unchanged, so the
+     * caller can check it is the same filing.
+     */
+    async reserveClaim(requestId: string, requestSha256: string, consent: ClaimConsent) {
+      await db
+        .insert(merchantClaims)
+        .values({
+          requestId,
+          requestSha256,
+          customerId: 'demo-user',
+          orderReference: consent.data.orderReference,
+          consentData: consent.data,
+          approvedFields: consent.approvedFields,
+        })
+        .onConflictDoUpdate({
+          target: merchantClaims.requestId,
+          set: { filedAt: sql`now()` },
+          setWhere: and(
+            isNull(merchantClaims.handoffId),
+            eq(merchantClaims.requestSha256, requestSha256),
+            eq(merchantClaims.customerId, 'demo-user'),
+          ),
+        });
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(eq(merchantClaims.requestId, requestId), eq(merchantClaims.customerId, 'demo-user')),
+        );
+      return row;
+    },
+    /** A filing whose platform claim is not known yet. */
+    async findPendingClaim(requestId: string) {
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+          ),
+        );
+      return row;
+    },
+    /** Unlinked filings older than `before`, oldest first, for the stale-filing sweep. */
+    async stalePendingClaims(before: Date, limit: number) {
+      return db
+        .select({ requestId: merchantClaims.requestId })
+        .from(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+            lt(merchantClaims.filedAt, before),
+          ),
+        )
+        .orderBy(asc(merchantClaims.filedAt))
+        .limit(limit);
+    },
+    /** Links a filing to its platform claim. Already-linked filings are left as they are. */
+    async bindClaim(requestId: string, handoffId: string) {
+      await db
+        .update(merchantClaims)
+        .set({ handoffId })
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+          ),
+        );
+    },
+    /**
+     * Removes an unlinked filing the sweep settled. Only a filing still older than the sweep's
+     * cutoff is removed: a replay that restarted its clock in the meantime keeps it.
+     */
+    async discardPendingClaim(requestId: string, filedBefore: Date) {
+      await db
+        .delete(merchantClaims)
+        .where(
+          and(
+            eq(merchantClaims.requestId, requestId),
+            eq(merchantClaims.customerId, 'demo-user'),
+            isNull(merchantClaims.handoffId),
+            lt(merchantClaims.filedAt, filedBefore),
+          ),
+        );
+    },
+    /** The customer's own claim record, or undefined if this customer did not file it here. */
+    async findClaim(handoffId: string) {
+      const [row] = await db
+        .select()
+        .from(merchantClaims)
+        .where(
+          and(eq(merchantClaims.handoffId, handoffId), eq(merchantClaims.customerId, 'demo-user')),
+        );
+      return row;
+    },
+    async clearClaimConsent(handoffId: string) {
+      await clearConsent(db, handoffId);
+    },
+    async listClaims(limit: number) {
+      return db
+        .select({
+          handoffId: merchantClaims.handoffId,
+          orderReference: merchantClaims.orderReference,
+          filedAt: merchantClaims.filedAt,
+        })
+        .from(merchantClaims)
+        .where(and(eq(merchantClaims.customerId, 'demo-user'), isNotNull(merchantClaims.handoffId)))
+        .orderBy(desc(merchantClaims.filedAt))
+        .limit(limit);
     },
     async getDraft(id: string) {
       const [row] = await db
@@ -203,6 +332,8 @@ export function store(client: SQL, config: Config, signing: ReturnType<typeof si
           })
           .where(eq(transfers.id, id));
         await tx.insert(transferEvents).values({ transferId: id, eventType: 'receipt_verified' });
+        // The case for this claim is sent: the consented details are no longer needed.
+        if (row.governance) await clearConsent(tx, row.governance.handoffId);
         return receipt;
       });
     },

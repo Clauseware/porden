@@ -1,13 +1,12 @@
 'use client';
 
-import { DamageData, Fields, PublicConfig } from '@porden/contracts';
+import { PublicConfig } from '@porden/contracts';
 import { ClaimView, type ClaimPolicy, type OrderFacts } from '@porden/contracts/delivery-claims';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { proposeClaimAction, submitClaimProposal, type ClaimTurn } from '../../../../claims-agent';
 import { createMerchantClaimsClient } from '../../../../claims-client';
 import { loadAgent, type Agent } from '../agent';
-import { saveConsent } from '../consent-store';
 import { deriveClaim } from './claim-args';
 import { ALL_FIELDS, failureText, FIELD_LABEL, isSignedOut, moneyText, refusalText } from '../copy';
 
@@ -46,7 +45,6 @@ export default function FileClaim() {
   const resultRef = useRef<HTMLHeadingElement>(null);
   const proposedRef = useRef<HTMLHeadingElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const pending = useRef<{ data: unknown; fields: unknown } | undefined>(undefined);
 
   // The page loads the facts first. The assistant never fetches them (contract section 6).
   useEffect(() => {
@@ -132,7 +130,6 @@ export default function FileClaim() {
         });
         return;
       }
-      pending.current = { data: derived.data, fields: derived.approvedFields };
       setMessages((previous) => [...previous, { role: 'customer', text: message }]);
       setPhase({
         state: 'proposed',
@@ -148,13 +145,6 @@ export default function FileClaim() {
     }
   }
 
-  function keep(claimId: string) {
-    const saved = DamageData.safeParse(pending.current?.data);
-    const fields = Fields.safeParse(pending.current?.fields);
-    if (saved.success && fields.success)
-      saveConsent(claimId, { data: saved.data, approvedFields: fields.data });
-  }
-
   async function checkOperation(operationId: string) {
     setPhase({
       state: 'unknown',
@@ -164,7 +154,6 @@ export default function FileClaim() {
     });
     try {
       const mutation = await client.operation(operationId);
-      keep(mutation.handoff.id);
       setText('');
       setPhase({
         state: 'result',
@@ -189,7 +178,6 @@ export default function FileClaim() {
       const outcome = await submitClaimProposal(proposal.agent.engine, proposal.turn);
       if (outcome.status === 'succeeded') {
         const view = ClaimView.safeParse(outcome.result);
-        if (view.success) keep(view.data.handoff.id);
         setText('');
         setPhase({
           state: 'result',
@@ -365,7 +353,6 @@ export default function FileClaim() {
                   type="button"
                   className="secondary"
                   onClick={() => {
-                    pending.current = undefined;
                     setPhase({ state: 'idle' });
                   }}
                 >
@@ -389,7 +376,7 @@ export default function FileClaim() {
                     </Link>
                   </p>
                   <p className="hint">
-                    Save this link. It is the only way to find this claim again.
+                    You can find it again under <Link href="/claims">Your claims</Link>.
                   </p>
                 </>
               )}
@@ -416,7 +403,6 @@ export default function FileClaim() {
                   type="button"
                   className="secondary"
                   onClick={() => {
-                    pending.current = undefined;
                     setPhase({ state: 'idle' });
                   }}
                 >
