@@ -7,5 +7,5 @@
     "resolveJsonModule": true
   },
   "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "vendor", "tmp", "**/.next"]
+  "exclude": ["node_modules", "vendor", "tmp", "**/.next", "apps/porden"]
 }

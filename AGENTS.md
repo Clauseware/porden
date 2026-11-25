@@ -44,13 +44,13 @@ Applies to the entire repository. More specific instructions may be added only w
 
 ## Frontend (Next.js and TypeScript)
 
-- Use the existing merchant and courier Next.js applications and shared contracts/browser SDK.
+- Use the existing Next.js applications in `apps/`, including `apps/porden` (public landing site) and the merchant and courier demo organizations, plus the shared contracts/browser SDK.
 - Prefer Server Components for server-rendered content and Client Components only where browser interaction is needed.
 - Use React state and effects when appropriate. Do not add `useCallback` or `useMemo` without a demonstrated correctness or performance reason.
 - Avoid unnecessary global state, custom hooks, wrappers, and component abstraction.
 - Keep state minimal and derive display values from existing state when possible.
 - Make loading, approval, cancellation, refusal, success, and error states explicit and accessible.
-- Follow Porden's dark-only identity: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text). Use the tokens in `apps/brand.css` and the `PordenSymbol` logo in `apps/logo.tsx`; do not hard-code colours.
+- Follow Porden's dark-only identity: Oxide Lavender `#C5A1C9` (primary), Near Black `#0C0C0E` (background), Charcoal `#1A1A1F` (surface), Off White `#F5F5F5` (text). Use the tokens in `apps/brand.css` and the `PordenSymbol` logo in `apps/logo.tsx`; do not hard-code colours. `apps/porden` keeps its semantic theme tokens in `apps/porden/app/globals.css` and the Connector mark in `apps/porden/public/porden-mark.svg`.
 - Prioritize usable, readable interfaces and the working end-to-end flow before polish.
 
 ## Testing and delivery
@@ -58,6 +58,7 @@ Applies to the entire repository. More specific instructions may be added only w
 - Test successful transfers, both approvals, cancellation, refusal, tampering, retries, and unknown-outcome reconciliation in a real browser.
 - Verify organization database permissions and cross-origin behavior in the deployed environment.
 - Run focused tests first, then relevant integration tests, typechecks, SDK builds, and frontend builds.
+- Use Bun 1.4.3, the version pinned in `packageManager`. Older Bun versions cannot read `bun.lock` and silently rewrite it.
 - Report completed changes, tests and exact results, outstanding risks, and unverified behavior.
 - Ask before expanding scope or introducing a new architectural pattern.
 

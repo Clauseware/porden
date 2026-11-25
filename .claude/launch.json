@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "porden-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "bun@1.4.3", "run", "--cwd", "apps/porden", "dev"],
+      "port": 4000
+    }
+  ]
+}
