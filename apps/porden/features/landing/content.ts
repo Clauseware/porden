@@ -1,5 +1,7 @@
 /** Landing page copy and data. Sections import from here, so wording changes live in one place. */
 
+import type { IlloName } from './components/illo';
+
 /** Sections linked from the nav and the footer. */
 export const navigation = [
   { href: '#how', label: 'How it works' },
@@ -56,7 +58,7 @@ export const developerStack = [
 export const faqs = [
   {
     q: 'Does a receipt mean the work is done?',
-    a: 'No. It proves the other organization accepted the handoff into its system — not that the work behind it is finished.',
+    a: 'No. It proves the other organization accepted the handoff into its system, not that the work behind it is finished.',
   },
   {
     q: 'What if the other side says no?',
@@ -80,29 +82,29 @@ export const handoffStages = [
   { label: 'Receipt verified', detail: 'Signature checked on your side' },
 ];
 
-/** The four steps of a handoff. `figure` picks the drawing on each card. */
+/** The four steps of a handoff. `figure` picks the illustration on each card. */
 export const steps = [
   {
-    figure: 'comb',
+    figure: 'approval',
     title: 'Approve',
     body: 'Someone approves exactly which details may leave. Everything else stays where it is.',
   },
   {
-    figure: 'rings',
+    figure: 'handoff-transfer',
     title: 'Hand off',
     body: 'Your agent delegates to theirs through the open Agentic Web runtime. No private relay.',
   },
   {
-    figure: 'gate',
+    figure: 'acceptance',
     title: 'Accept',
     body: 'The other organization checks the request against its own rules and confirms the write itself.',
   },
   {
-    figure: 'seal',
+    figure: 'receipts',
     title: 'Prove',
     body: 'A signed receipt comes back, and your side verifies it before anything is called done.',
   },
-] as const;
+] as const satisfies readonly { figure: IlloName; title: string; body: string }[];
 
 /**
  * The four promises in the Guarantees section, in the order their shapes morph.
@@ -116,7 +118,7 @@ export const guarantees = [
   },
   {
     title: 'Never resent blindly',
-    body: 'A lost response stays unknown. Porden checks the other side read-only — it never sends the same work twice.',
+    body: 'A lost response stays unknown. Porden checks the other side read-only and never sends the same work twice.',
     label: 'Unknown, checking',
   },
   {

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { HandoffNavProvider } from '@/components/ui/handoff-nav';
+import { IlloPlayback } from './illo-playback';
 import { SiteFooter } from './site-footer';
 import { SiteHeader } from './site-header';
 import '../landing.css';
@@ -12,6 +13,7 @@ export function LandingLayout({ children }: { children: ReactNode }) {
         <SiteHeader />
         {children}
         <SiteFooter />
+        <IlloPlayback />
       </div>
     </HandoffNavProvider>
   );

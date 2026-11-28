@@ -10,7 +10,7 @@ const heading = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-head
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' });
 
 export const metadata: Metadata = {
-  title: 'Porden — Pass with confidence',
+  title: 'Porden: Pass with confidence',
   description:
     'Porden moves customer-approved cases between independent organizations and their AI agents, and returns a signed receipt the sender can verify.',
 };
