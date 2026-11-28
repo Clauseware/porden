@@ -141,3 +141,67 @@
     transition: none;
   }
 }
+
+/* Isometric illustrations (features/landing/components/illo.tsx). The inlined SVGs mix every
+   face from these roles; the dark path keeps the brand surface, text and lavender. */
+:root,
+.dark {
+  --illos-ground: var(--brand-charcoal);
+  --illos-ink: var(--brand-off-white);
+  --illos-accent: var(--brand-lavender);
+  --illos-dark: 1;
+}
+
+.illo {
+  container-type: inline-size;
+  pointer-events: none;
+  user-select: none;
+}
+
+.illo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@container (max-width: 440px) {
+  .illo .lab {
+    display: none;
+  }
+}
+
+/* Labels redrawn as text inside the illustrations. */
+.illo .lt {
+  font:
+    600 12px ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  fill: var(--illos-ink);
+  stroke: none;
+}
+
+.illo .lt--active {
+  fill: var(--illos-accent);
+}
+
+/* An illustration on the lavender band: drawn in near black on the light path. */
+.illo--on-lavender {
+  --illos-ground: var(--brand-lavender);
+  --illos-ink: var(--brand-near-black);
+  --illos-accent: var(--brand-near-black);
+  --illos-dark: 0;
+}
+
+/* A cropped illustration that fills its frame; the viewBox keeps it centred. Moving parts may
+   leave the trimmed box, so they draw past it instead of being clipped. */
+.illo--fill {
+  height: 100%;
+}
+
+.illo--fill svg {
+  height: 100%;
+  overflow: visible;
+}
